@@ -4,7 +4,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to REPOSITORY_NAME_HERE documentation!
+Welcome to HKA_Robogistics_DuckieRace documentation!
 ==============================================
 
 .. toctree::

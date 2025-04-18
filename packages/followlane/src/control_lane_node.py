@@ -60,5 +60,6 @@ class ControlLaneNode(DTROS):
 if __name__ == '__main__':
     # create the node
     node = ControlLaneNode(node_name='control_lane_node')
+    print("Success")
     # keep the process from terminating
     rospy.spin()

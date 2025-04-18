@@ -1,4 +1,4 @@
-Duckietown Module: REPOSITORY_NAME_HERE
+Duckietown Module: HKA_Robogistics_DuckieRace
 =======================================
 
 .. toctree::

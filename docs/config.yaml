@@ -1,9 +1,9 @@
 docs_config_version: v1
 
 # CONFIGURE THESE TO MATCH YOUR PROJECT:
-project: "REPOSITORY_NAME_HERE"
+project: "HKA_Robogistics_DuckieRace"
 copyright: "Duckietown"
-author: "YOUR_NAME_HERE"
+author: "QuackSquad"
 version: "ente"
 custom_sections:  [
   "Configuration",
