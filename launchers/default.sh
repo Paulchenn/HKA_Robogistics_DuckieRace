@@ -22,13 +22,19 @@ dt-launchfile-init
 #ls -l "$(dirname "$0")"
 
 # 1. Steuerung aktivieren
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/switch_control_node.py" &
+#dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/switch_control_node.py" &
 
 # 2. Lane Detection starten
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/detect_lane_node.py" &
+#dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/detect_lane_node.py" &
+
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/camera_reader_node.py"
+
+#dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/control_lane_node.py"
+
+#dt-exec python3 "$DT_REPO_PATH/packages/testtim/my_script.py" 
 
 # 3. Spur folgen
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/control_lane_node.py"
+#dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/control_lane_node.py"
 
 #dt-exec bash /launch/HKA_Robogistics_DuckieRace/camera-reader.sh &
 
