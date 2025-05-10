@@ -1,3 +1,6 @@
+assets/yolo/venv/
+assets/yolo/data/*
+
 docs/build
 *pyc
 
