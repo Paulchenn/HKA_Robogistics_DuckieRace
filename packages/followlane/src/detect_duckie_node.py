@@ -16,7 +16,7 @@ class DetectDuckieNode(DTROS):
         # initialize the DTROS parent class
         super(DetectDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         
-        self._model = YOLO('assets/yolo/results/duckies/duckie-train/best.pt') #("packages/followlane/assets/model.pt") 
+        self._model = YOLO("packages/followlane/assets/model.pt") # copy of assets/yolo_duckies/results/duckies/duckie-train2/weights/best.pt
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
@@ -28,6 +28,8 @@ class DetectDuckieNode(DTROS):
 
         self.counter = 0
         self.bridge = CvBridge()
+
+        self._window = "duckie-detection"
 
 
     def cbDetectObjects(self,image_msg):
@@ -45,6 +47,9 @@ class DetectDuckieNode(DTROS):
 
         msg = self.bridge.cv2_to_imgmsg(image, "bgr8")
         self.pup_image.publish(msg)
+
+        cv2.imshow(self._window, image)
+        cv2.waitKey(1)
 
 
         
