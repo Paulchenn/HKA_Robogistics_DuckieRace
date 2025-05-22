@@ -59,10 +59,10 @@ def draw_bounding_boxes(results,img):
     for result in results:
         for box in result.boxes:
             cv2.rectangle(img, (int(box.xyxy[0][0]), int(box.xyxy[0][1])),
-                          (int(box.xyxy[0][2]), int(box.xyxy[0][3])), (255, 0, 0), 5)
+                          (int(box.xyxy[0][2]), int(box.xyxy[0][3])), (255, 0, 0), 1)
             cv2.putText(img, f"{result.names[int(box.cls[0])]}",
                         (int(box.xyxy[0][0]), int(box.xyxy[0][1]) - 10),
-                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 5)
+                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 1)
     return img
 
 if __name__ == '__main__':
