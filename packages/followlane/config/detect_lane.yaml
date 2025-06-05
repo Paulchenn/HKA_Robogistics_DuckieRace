@@ -17,15 +17,15 @@ lane_image:
 white:
   hl: 0
   hh: 255
-  sl: 0
-  sh: 37
-  vl: 109
+  sl: 39
+  sh: 87
+  vl: 158
   vh: 255
 gelb:
   hl: 0
-  hh: 145
-  sl: 113
+  hh: 71
+  sl: 123
   sh: 255
-  vl: 113
-  vh: 229
+  vl: 133
+  vh: 255
 

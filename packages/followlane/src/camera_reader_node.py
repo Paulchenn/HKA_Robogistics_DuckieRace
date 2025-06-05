@@ -26,7 +26,7 @@ class CameraReaderNode(DTROS):
         with open('packages/followlane/config/detect_lane.yaml','r') as f:
             self.conf = yaml.safe_load(f)
 
-        self.target_x_buffer = []
+        self.target_x_buffers = {i: [] for i in range(5)}  # 5 Boxen (idx 0–4)
         rospy.on_shutdown(self.fnShutDown)
 
     def create_polygon_offset(self, offset_y):
@@ -51,7 +51,7 @@ class CameraReaderNode(DTROS):
         def get_lines(mask):
             blurred = cv2.GaussianBlur(mask, (5, 5), 0)
             edges = cv2.Canny(blurred, 50, 150)
-            return cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=30, maxLineGap=10)
+            return cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=300)
 
         lines_white = get_lines(mw)
         lines_yellow = get_lines(my)
@@ -83,7 +83,7 @@ class CameraReaderNode(DTROS):
         elif x_yellow is not None:
             return x_yellow + 260
         elif x_white is not None:
-            offset = 120 + 22.5 * idx**1.5
+            offset = 180 - 4.17 * idx ** 1.4
             return (x_white - offset)
         else:
             return None
@@ -113,11 +113,12 @@ class CameraReaderNode(DTROS):
                 target_xs_raw.append((idx, tx))
 
         for idx, (poly, tx_raw) in enumerate(zip(polygons, [tx for _, tx in target_xs_raw])):
-            self.target_x_buffer.append(tx_raw)
-            if len(self.target_x_buffer) > 15:
-                self.target_x_buffer.pop(0)
+            self.target_x_buffers[idx].append(tx_raw)
+            if len(self.target_x_buffers[idx]) > 15:
+                self.target_x_buffers[idx].pop(0)
 
-            smoothed_x = int(np.mean(self.target_x_buffer))
+            smoothed_x = int(np.mean(self.target_x_buffers[idx]))
+
 
             # Y-Mitte der Polygonbox berechnen
             y_coords = [point[1] for point in poly[0]]
