@@ -16,7 +16,7 @@ class DetectDuckieNode(DTROS):
         # initialize the DTROS parent class
         super(DetectDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         
-        self._model = YOLO('assets/yolo/results/duckies/duckie-train/best.pt') #("packages/followlane/assets/model.pt") 
+        self._model = YOLO("packages/followlane/assets/model.pt") # copy of assets/yolo_duckies/results/duckies/duckie-train2/weights/best.pt
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
@@ -28,6 +28,8 @@ class DetectDuckieNode(DTROS):
 
         self.counter = 0
         self.bridge = CvBridge()
+
+        self._window = "duckie-detection"
 
 
     def cbDetectObjects(self,image_msg):
@@ -46,6 +48,9 @@ class DetectDuckieNode(DTROS):
         msg = self.bridge.cv2_to_imgmsg(image, "bgr8")
         self.pup_image.publish(msg)
 
+        cv2.imshow(self._window, image)
+        cv2.waitKey(1)
+
 
         
 
@@ -54,10 +59,10 @@ def draw_bounding_boxes(results,img):
     for result in results:
         for box in result.boxes:
             cv2.rectangle(img, (int(box.xyxy[0][0]), int(box.xyxy[0][1])),
-                          (int(box.xyxy[0][2]), int(box.xyxy[0][3])), (255, 0, 0), 5)
+                          (int(box.xyxy[0][2]), int(box.xyxy[0][3])), (255, 0, 0), 1)
             cv2.putText(img, f"{result.names[int(box.cls[0])]}",
                         (int(box.xyxy[0][0]), int(box.xyxy[0][1]) - 10),
-                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 5)
+                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 1)
     return img
 
 if __name__ == '__main__':
