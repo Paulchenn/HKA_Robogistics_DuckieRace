@@ -9,6 +9,7 @@ from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
 from std_msgs.msg import Float64
+from std_msgs.msg import Bool
 
 class CameraReaderNode(DTROS):
 
@@ -22,6 +23,7 @@ class CameraReaderNode(DTROS):
 
         self.sub = rospy.Subscriber(self._camera_topic, CompressedImage, self.callback)
         self.pub_lane = rospy.Publisher(f"/{self._vehicle_name}/detect/lane", Float64, queue_size=1)
+        self.pub_redline = rospy.Publisher(f"/{self._vehicle_name}/stop_line_detected",  Bool, queue_size=1)
 
         with open('packages/followlane/config/detect_lane.yaml','r') as f:
             self.conf = yaml.safe_load(f)
@@ -97,11 +99,31 @@ class CameraReaderNode(DTROS):
         gsl, gsh = self.conf['gelb']['sl'], self.conf['gelb']['sh']
         gvl, gvh = self.conf['gelb']['vl'], self.conf['gelb']['vh']
 
+        rhl1, rhh1 = 0, 10
+        rhl2, rhh2 = 170,180
+        rsl,rsh = 100, 255
+        rvl, rvh = 100, 255
+
         image = self._bridge.compressed_imgmsg_to_cv2(msg)
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         mask_white = cv2.inRange(hsv, (whl, wsl, wvl), (whh, wsh, wvh))
         mask_yellow = cv2.inRange(hsv, (ghl, gsl, gvl), (ghh, gsh, gvh))
+        mask_red1 = cv2.inRange(hsv, (rhl1,rsl,rvl), (rhh1, rsh, rvh))
+        mask_red2 = cv2.inRange(hsv, (rhl2,rsl,rvl), (rhh2, rsh, rvh))
+        mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+
+        red_pixels = cv2.countNonZero(mask_red)
+        threshold = 5000 #Schwellenwert für die rote Line
+        
+        if red_pixels > threshold:
+            rospy.loginfo("Rote Linie erkannt, stoppe den Duckiebot!")
+            self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen
+            self.pub_redline.publish(Bool(True))
+
+
+        cv2.imshow(self._window, image)
+        cv2.waitKey(1)
 
         polygons = [self.create_polygon_offset(offset_y=i*40) for i in range(5)] #offset kann geändert werden
 
