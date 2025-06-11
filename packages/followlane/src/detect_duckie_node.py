@@ -8,130 +8,177 @@ import yaml
 
 from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
+from duckietown_msgs.msg import Twist2DStamped
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Float64
 from ultralytics import YOLO
 
 
+class FilteredResults:
+    def __init__(self, names):
+        self.names = names
+        self.boxes = []
+        self.nearest = None  # Store the nearest box here (not a list)
+
+
 class DetectDuckieNode(DTROS):
     def __init__(self, node_name):
-        # initialize the DTROS parent class
+        # Initialize the DTROS parent class
         super(DetectDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         
-        self._model = YOLO("packages/followlane/assets/model.pt") # copy of assets/yolo_duckies/results/duckies/duckie-train2/weights/best.pt
+        self._model = YOLO("packages/followlane/assets/model.pt")  # YOLO model path
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
-        self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.cbDetectObjects, queue_size = 1)
-        self._yolo_topic = f"/{self._vehicle_name}/detect/duckie/image"
-        self.pup_image = rospy.Publisher(self._yolo_topic,Image,queue_size = 1)
-        self._duckie_topic = f"/{self._vehicle_name}/detect/duckie"
-        self.pup_duckie = rospy.Publisher(self._duckie_topic,Float64,queue_size = 1)
+        self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.cbDetectObjects)
 
-        with open('packages/followlane/config/detect_lane.yaml','r') as f:
+        self._yolo_topic = f"/{self._vehicle_name}/detect/duckie/image"
+        self.pup_image = rospy.Publisher(self._yolo_topic, Image, queue_size=1)
+
+        self._duckie_topic = f"/{self._vehicle_name}/detect/duckie"
+        self.pup_duckie = rospy.Publisher(self._duckie_topic, Float64, queue_size=1)
+
+        twist_topic = f"/{self._vehicle_name}/car_cmd_switch_node/cmd"
+        self.pub_cmd_vel = rospy.Publisher(twist_topic, Twist2DStamped, queue_size=1)
+
+        with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
-        self.counter = 0
-        self.bridge = CvBridge()
+        self._bridge = CvBridge()
 
         self._window = "duckie-detection"
 
-
-    def cbDetectObjects(self, image_msg):
-        '''
-        if self.counter % 3 != 0:
-            self.counter += 1
-            return
-        else:
-            self.counter += 1
-        '''
-
-        # 1. get image from camera
+    def cbDetectObjects(
+            self,
+            image_msg
+        ):
+        # 1. Convert CompressedImage message to OpenCV image
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         # 2. Create an empty mask with the same size as the image
         mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
 
-        # 3.1. Create a polygon that defines the area of interest
-        polygon = np.array([
+        # 3. Define polygon points for the area of interest
+        polygon = self.get_polygon()
+
+        # 4. Draw the polygon on the mask
+        cv2.fillPoly(mask, [polygon], 255)
+
+        # 5. Apply the mask to the image
+        masked_image = cv2.bitwise_and(cv_image, cv_image, mask=mask)
+        cv2.polylines(cv_image, [polygon], isClosed=True, color=(0, 255, 0), thickness=2)
+
+        # 6. Run YOLO model on the masked image
+        results = self._model(masked_image, conf=0.5, iou=0.5, agnostic_nms=True, verbose=False)
+        
+        # 7. Filter detected duckies inside polygon mask and find nearest one
+        filtered_results, nearestDuckie = self.get_filteredResults_and_nearestDuckie(
+            results,
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        )
+
+        # 8. Draw bounding boxes around detected duckies
+        img_bb = self.draw_bounding_boxes(filtered_results, cv_image)
+
+        # 9. Show polygon overlay
+        cv2.imshow(self._window, img_bb)
+        cv2.waitKey(1)
+
+        # 10. Stop if duckie is nearer than value in config
+        if nearestDuckie is not None:
+            flag_stopped = self.stop_duckie(nearestDuckie)
+
+
+    def get_polygon(self):
+        return np.array([
             [self.conf['lane_image']['top_left_x'], self.conf['lane_image']['top_left_y']],
             [self.conf['lane_image']['top_right_x'], self.conf['lane_image']['top_right_y']],
             [self.conf['lane_image']['bottom_right_x'], self.conf['lane_image']['bottom_right_y']],
             [self.conf['lane_image']['bottom_left_x'], self.conf['lane_image']['bottom_left_y']],
         ], dtype=np.int32)
-        # 3.2. Create a polygon that defines the area of interest and draw it on the mask
-        cv2.fillPoly(mask, [polygon], 255)
-
-        # 4. Apply the mask to the image
-        masked_image = cv2.bitwise_and(cv_image, cv_image, mask=mask)
-
-        # 5. Run YOLOv8 model on the masked image
-        results = self._model(masked_image, conf=0.5, iou=0.5, agnostic_nms=True)
-
-        # 6. Get bounding boxes from YOLO        
-        boxes = results.boxes.xyxy   # <---- ERROR HEERE !!!
-
-        # 7. Filter bounding boxes: keep only those whose center is inside the polygon
-        inside_boxes = []
-        for box in boxes:
-            x1, y1, x2, y2 = map(int, box)
-            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2  # center of the box
-            if mask[cy, cx] == 255:
-                inside_boxes.append(box)
-                
-        # 8. Optional: Show image and polygon
-        #img_poly = cv_image.copy()
-        #cv2.polylines(img_poly, [polygon], isClosed=True, color=(0, 255, 0), thickness=2)
-        #cv2.imshow("Polygon", img_poly)
-        #cv2.imshow("Mask", mask)
-        #cv2.waitKey(1)
-        #cv2.destroyAllWindows()
-
-        '''
-        nearest_box = get_nearest_box(results)
-        x = int(nearest_box.xyxy[0][2])
-        y = int(nearest_box.xyxy[0][3])
-        rospy.loginfo(f"nearest duckie: ({x}, {y})")
-
-        image = draw_bounding_boxes(results,cv_image)
-
-        msg = self.bridge.cv2_to_imgmsg(image, "bgr8")
-        self.pup_image.publish(msg)
-
-        cv2.imshow(self._window, image)
-        cv2.waitKey(1)
-        '''
-       
 
 
-def draw_bounding_boxes(results,img):
-    for result in results:
-        for box in result.boxes:
-            cv2.rectangle(img, (int(box.xyxy[0][0]), int(box.xyxy[0][1])),
-                          (int(box.xyxy[0][2]), int(box.xyxy[0][3])), (255, 0, 0), 1)
-            cv2.putText(img, f"{result.names[int(box.cls[0])]}",
-                        (int(box.xyxy[0][0]), int(box.xyxy[0][1]) - 10),
-                        cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 1)
-    return img
+    def get_filteredResults_and_nearestDuckie(
+            self,
+            results,
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        ):
+        for result in results:
+            filtered = FilteredResults(names=result.names)
+
+            for box in result.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                if mask[cy, cx] == 255:
+                    filtered.boxes.append(box)
+                    if y2 >= y_lowest:
+                        filtered.nearest = box
+                        y_lowest = y2
+
+            # Only add if at least one box found
+            if filtered.boxes:
+                filtered_results.append(filtered)
+
+        return filtered_results, filtered.nearest
 
 
-def get_nearest_box(results):
-    y_min = float('-inf')
-    box_with_min_y = None
+    def draw_bounding_boxes(
+            self,
+            results_list,
+            img
+        ):
+        for result in results_list:
+            for box in result.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cls_id = int(box.cls[0]) if hasattr(box, 'cls') else 0
+                label = result.names.get(cls_id, "object")
 
-    for result in results:
-        for box in result.boxes:
-            if box.xyxy[0][3] >= y_min:
-                box_with_min_y = box
-                y_min = box.xyxy[0][3]
-                
-    return box_with_min_y
+                # Draw bounding box in blue
+                cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
+            # If nearest box exists, highlight it in green
+            if result.nearest is not None:
+                box = result.nearest
 
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cls_id = int(box.cls[0]) if hasattr(box, 'cls') else 0
+                label = f"{result.names.get(cls_id, 'object')} nearest"
+
+                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+                if False:
+                    print("nearest Duckie:")
+                    print(f"    x1: {x1}")
+                    print(f"    y1: {y1}")
+                    print(f"    x2: {x2}")
+                    print(f"    y2: {y2}")
+
+        return img
+    
+
+    def stop_duckie(
+            self,
+            nearestDuckie
+    ):
+        y_min4stop = self.conf['min_distance_nearestDuckie']
+
+        x1, y1, x2, y2 = map(int, nearestDuckie.xyxy[0])
+        if y2 <= y_min4stop:
+            rospy.loginfo("Duckie in the way. Sending stop command...")
+            stop_msg = Twist2DStamped(v=0.0, omega=0.0)
+            
+            for _ in range(5):
+                rospy.sleep(0.05)
+                self.pub_cmd_vel.publish(stop_msg)
 
 
 if __name__ == '__main__':
-
     node = DetectDuckieNode(node_name='detect_duckie_node')
     rospy.spin()
