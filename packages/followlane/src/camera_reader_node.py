@@ -40,16 +40,76 @@ class CameraReaderNode(DTROS):
             [self.conf['lane_image']['bottom_left_x'] + shrink, self.conf['lane_image']['bottom_left_y'] - offset_y],
         ]], dtype=np.int32)
 
-    def compute_target_x_from_polygon(self, polygon, mask_white, mask_yellow, image, idx):
+    # def compute_target_x_from_polygon(self, polygon, mask_white, mask_yellow, mask_red, image, idx):
+    #     mask_poly = np.zeros_like(mask_white)
+    #     cv2.fillPoly(mask_poly, polygon, 255)
+
+    #     mw = cv2.bitwise_and(mask_white, mask_poly)
+    #     my = cv2.bitwise_and(mask_yellow, mask_poly)
+    #     mr = cv2.bitwise_and(mask_red, mask_poly)
+
+    #     image[mw > 0] = (0, 255, 0)
+    #     image[my > 0] = (255, 0, 0)
+    #     image[mr > 0] = (0, 0, 255)
+
+    #     def get_lines(mask):
+    #         blurred = cv2.GaussianBlur(mask, (5, 5), 0)
+    #         edges = cv2.Canny(blurred, 50, 150)
+    #         return cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=15, minLineLength=10, maxLineGap=300)
+
+
+    #     lines_white = get_lines(mw)
+    #     lines_yellow = get_lines(my)
+    #     lines_red = get_lines(mr)
+
+    #     # Linien für Visualisierung einzeichnen
+    #     if lines_white is not None:
+    #         for x1, y1, x2, y2 in lines_white[:, 0]:
+    #             cv2.line(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+    #     if lines_yellow is not None:
+    #         for x1, y1, x2, y2 in lines_yellow[:, 0]:
+    #             cv2.line(image, (x1, y1), (x2, y2), (0, 255, 255), 2)
+
+    #     x_white = None
+    #     x_yellow = None
+
+    #     if lines_white is not None:
+    #         white_xs = [(x1 + x2) / 2 for [[x1, _, x2, _]] in lines_white if ((x1 + x2) / 2) >= 310]
+    #         if white_xs:
+    #             x_white = min(white_xs)
+
+    #     if lines_yellow is not None:
+    #         yellow_xs = [(x1 + x2) / 2 for [[x1, _, x2, _]] in lines_yellow if ((x1 + x2) / 2) <= 340]
+    #         if yellow_xs:
+    #             x_yellow = max(yellow_xs)
+
+    #     if x_white is not None and x_yellow is not None:
+    #         return (x_white + x_yellow + 120) / 2
+    #     elif x_yellow is not None:
+    #         return x_yellow + 260
+    #     elif x_white is not None:
+    #         offset = 180 - 4.17 * idx ** 1.4
+    #         return (x_white - offset)
+    #     else:
+    #         return None
+
+    def compute_target_x_from_polygon(self, polygon, mask_white, mask_yellow, mask_red, image, idx):
+        # Maske auf Polygonbereich begrenzen
         mask_poly = np.zeros_like(mask_white)
         cv2.fillPoly(mask_poly, polygon, 255)
 
+        # Masken im Polygonbereich isolieren
         mw = cv2.bitwise_and(mask_white, mask_poly)
         my = cv2.bitwise_and(mask_yellow, mask_poly)
+        mr = cv2.bitwise_and(mask_red, mask_poly)
 
-        image[mw > 0] = (0, 255, 0)
-        image[my > 0] = (255, 0, 0)
+        # Farbige Darstellung im Bild (optional für Debug)
+        image[mw > 0] = (0, 255, 0)     # Grün für weiße Maske
+        image[my > 0] = (255, 0, 0)     # Blau für gelbe Maske
+        image[mr > 0] = (0, 0, 255)     # Rot für rote Maske
 
+        # Linien erkennen mit Hough-Transformation
         def get_lines(mask):
             blurred = cv2.GaussianBlur(mask, (5, 5), 0)
             edges = cv2.Canny(blurred, 50, 150)
@@ -57,16 +117,23 @@ class CameraReaderNode(DTROS):
 
         lines_white = get_lines(mw)
         lines_yellow = get_lines(my)
+        lines_red = get_lines(mr)
 
-        # Linien für Visualisierung einzeichnen
+        # Linien einzeichnen zur Visualisierung
         if lines_white is not None:
             for x1, y1, x2, y2 in lines_white[:, 0]:
-                cv2.line(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.line(image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Rot für weiße Linien
 
         if lines_yellow is not None:
             for x1, y1, x2, y2 in lines_yellow[:, 0]:
-                cv2.line(image, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                cv2.line(image, (x1, y1), (x2, y2), (0, 255, 255), 2)  # Gelb für gelbe Linien
 
+        if lines_red is not None:
+            rospy.loginfo("Rote Linie gefunden zum Linie malen")
+            for x1, y1, x2, y2 in lines_red[:, 0]:
+                cv2.line(image, (x1, y1), (x2, y2), (255, 255, 255), 2)  # Weiß für rote Linien
+
+        # Berechnung der Zielposition aus weißen und gelben Linien
         x_white = None
         x_yellow = None
 
@@ -80,6 +147,7 @@ class CameraReaderNode(DTROS):
             if yellow_xs:
                 x_yellow = max(yellow_xs)
 
+        # Ziel-x berechnen basierend auf gefundenen Linien
         if x_white is not None and x_yellow is not None:
             return (x_white + x_yellow + 120) / 2
         elif x_yellow is not None:
@@ -89,6 +157,7 @@ class CameraReaderNode(DTROS):
             return (x_white - offset)
         else:
             return None
+
 
     def callback(self, msg):
         whl, whh = self.conf['white']['hl'], self.conf['white']['hh']
@@ -130,7 +199,7 @@ class CameraReaderNode(DTROS):
         target_xs_raw = []
 
         for idx, poly in enumerate(polygons):
-            tx = self.compute_target_x_from_polygon(poly, mask_white, mask_yellow, image, idx=idx)
+            tx = self.compute_target_x_from_polygon(poly, mask_white, mask_yellow, mask_red, image, idx=idx)
             if tx is not None:
                 target_xs_raw.append((idx, tx))
 

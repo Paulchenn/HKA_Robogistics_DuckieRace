@@ -165,7 +165,7 @@ class RedLineDetector(DTROS):
         cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
         num_red_lines = len(contours)
         message = f"Linien: {num_red_lines}"
-        self.pub.publish(message)
+        self.pub_red_line_info.publish(message)
 
         # Optional: Bild speichern statt `cv2.imshow()`
         cv2.imshow("/data/processed_image.jpg", frame)
