@@ -1,5 +1,5 @@
-assets/yolo/venv/
-assets/yolo/data/*
+assets/yolo_bots/data/*
+assets/yolo_duckies/data/*
 
 docs/build
 *pyc
