@@ -7,12 +7,12 @@ if os.getcwd() != os.path.dirname(os.path.abspath(__file__)):
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Load a model
-model = YOLO("yolov8s.pt")  # load an official model, here nano (smallest but fastest model)
+model = YOLO("yolov8n.pt")  # load an official model, here nano (smallest but fastest model)
 
 # Train the model
 model.train(
     data=os.path.join(os.getcwd(), "data/data.yaml"),
-    epochs=100,
+    epochs=30,
     imgsz=640,
     project="results/duckies",
     name="duckie-train"

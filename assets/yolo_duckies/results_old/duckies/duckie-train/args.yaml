@@ -1,8 +1,8 @@
 task: detect
 mode: train
 model: yolov8n.pt
-data: /home/duckie3/QuackSquad/HKA_Robogistics_DuckieRace/assets/yolo_duckies/data/data.yaml
-epochs: 30
+data: /Users/glaserpaul/Documents/010_HKA_RKIM/Robogistics/DuckieBot/yolo-duckiebot/data/data.yaml
+epochs: 3
 time: null
 patience: 100
 batch: 16
