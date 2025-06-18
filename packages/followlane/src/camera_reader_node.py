@@ -102,14 +102,14 @@ class CameraReaderNode(DTROS):
         # Masken im Polygonbereich isolieren
         mw = cv2.bitwise_and(mask_white, mask_poly)
         my = cv2.bitwise_and(mask_yellow, mask_poly)
-        mr = cv2.bitwise_and(mask_red, mask_poly)
+        # mr = cv2.bitwise_and(mask_red, mask_poly)
 
         # Farbige Darstellung im Bild (optional für Debug)
         image[mw > 0] = (0, 255, 0)     # Grün für weiße Maske
         image[my > 0] = (255, 0, 0)     # Blau für gelbe Maske
-        image[mr > 0] = (0, 0, 255)     # Rot für rote Maske
+        # image[mr > 0] = (0, 0, 255)     # Rot für rote Maske
 
-        # Linien erkennen mit Hough-Transformation
+        # Linien erkennen mit Hough-Transformation für Weiß und Gelb
         def get_lines(mask):
             blurred = cv2.GaussianBlur(mask, (5, 5), 0)
             edges = cv2.Canny(blurred, 50, 150)
@@ -117,21 +117,17 @@ class CameraReaderNode(DTROS):
 
         lines_white = get_lines(mw)
         lines_yellow = get_lines(my)
-        lines_red = get_lines(mr)
 
-        # Linien einzeichnen zur Visualisierung
+        # Visualisierung Weiß
         if lines_white is not None:
             for x1, y1, x2, y2 in lines_white[:, 0]:
-                cv2.line(image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Rot für weiße Linien
+                cv2.line(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
+        # Visualisierung Gelb
         if lines_yellow is not None:
             for x1, y1, x2, y2 in lines_yellow[:, 0]:
-                cv2.line(image, (x1, y1), (x2, y2), (0, 255, 255), 2)  # Gelb für gelbe Linien
-
-        if lines_red is not None:
-            rospy.loginfo("Rote Linie gefunden zum Linie malen")
-            for x1, y1, x2, y2 in lines_red[:, 0]:
-                cv2.line(image, (x1, y1), (x2, y2), (255, 255, 255), 2)  # Weiß für rote Linien
+                cv2.line(image, (x1, y1), (x2, y2), (0, 255, 255), 2)
+        
 
         # Berechnung der Zielposition aus weißen und gelben Linien
         x_white = None
@@ -159,6 +155,7 @@ class CameraReaderNode(DTROS):
             return None
 
 
+
     def callback(self, msg):
         whl, whh = self.conf['white']['hl'], self.conf['white']['hh']
         wsl, wsh = self.conf['white']['sl'], self.conf['white']['sh']
@@ -172,6 +169,7 @@ class CameraReaderNode(DTROS):
         rhl2, rhh2 = 170,180
         rsl,rsh = 100, 255
         rvl, rvh = 100, 255
+        
 
         image = self._bridge.compressed_imgmsg_to_cv2(msg)
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -190,9 +188,6 @@ class CameraReaderNode(DTROS):
             self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen
             self.pub_redline.publish(Bool(True))
 
-
-        cv2.imshow(self._window, image)
-        cv2.waitKey(1)
 
         polygons = [self.create_polygon_offset(offset_y=i*40) for i in range(5)] #offset kann geändert werden
 
@@ -225,6 +220,7 @@ class CameraReaderNode(DTROS):
 
         for poly in polygons:
             cv2.polylines(image, poly, isClosed=True, color=(255, 255, 255), thickness=2)
+
 
         cv2.imshow(self._window, image)
         cv2.waitKey(1)

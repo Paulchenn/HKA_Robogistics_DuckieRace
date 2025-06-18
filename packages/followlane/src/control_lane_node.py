@@ -84,8 +84,8 @@ class ControlLaneNode(DTROS):
             print(f"[PID TEST] P={self.kp*error:.3f}, I={self.ki*self.integral:.3f}, D={self.kd*derivative:.3f}, omega={omega:.3f}, dt={dt:.3f}")
 
         #if you dont want to drive yet leave as text
-        #twist = Twist2DStamped(v=v, omega=omega)
-        #self.pub_cmd_vel.publish(twist)
+        twist = Twist2DStamped(v=v, omega=omega)
+        self.pub_cmd_vel.publish(twist)
 
     def fnShutDown(self):
         rospy.loginfo("Shutting down. Sending stop command...")
