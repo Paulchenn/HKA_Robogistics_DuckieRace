@@ -134,8 +134,8 @@ class CameraReaderNode(DTROS):
         for poly in polygons:
             cv2.polylines(image, poly, isClosed=True, color=(255, 255, 255), thickness=2)
 
-        cv2.imshow(self._window, image)
-        cv2.waitKey(1)
+        #cv2.imshow(self._window, image)
+        #cv2.waitKey(1)
 
     def fnShutDown(self):
         with open('packages/followlane/config/detect_lane.yaml','w') as f:

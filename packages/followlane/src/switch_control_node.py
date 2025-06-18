@@ -5,6 +5,7 @@ from std_msgs.msg import Float64, Int32
 from enum import Enum
 import os
 from duckietown.dtros import DTROS, NodeType
+from duckietown_msgs.msg import Twist2DStamped
 
 class ControlType(Enum):
     Lane = 1
@@ -15,7 +16,7 @@ class SwitchControlNode(DTROS):
         super(SwitchControlNode, self).__init__(node_name=node_name, node_type=NodeType.GENERIC)
         
         self._vehicle_name = os.environ['VEHICLE_NAME']
-        self.sub_duckie = rospy.Subscriber(f"/{self._vehicle_name}/detect/duckie", Float64, self.cbDuckieDetected, queue_size=1)
+        self.sub_duckie = rospy.Subscriber(f"/{self._vehicle_name}/detect/duckie/bypass_cmd", Twist2DStamped, self.cbDuckieDetected, queue_size=1)
         self.sub_lane = rospy.Subscriber(f"/{self._vehicle_name}/detect/lane", Float64, self.cbLaneDetected, queue_size=1)
         self.pub_control = rospy.Publisher(f"/{self._vehicle_name}/switch/control", Int32, queue_size=1)
         
@@ -23,7 +24,7 @@ class SwitchControlNode(DTROS):
 
     def cbDuckieDetected(self, msg):
         # Noch keine Logik implementiert
-        pass
+        print(msg)
 
     def cbLaneDetected(self, msg):
         # Noch keine Logik implementiert
