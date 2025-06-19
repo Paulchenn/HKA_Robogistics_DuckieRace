@@ -5,12 +5,13 @@ import rospy
 import numpy as np
 import os
 import yaml
+import threading
 
 from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped
 from sensor_msgs.msg import CompressedImage, Image
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Float64MultiArray
 from ultralytics import YOLO
 
 
@@ -25,36 +26,43 @@ class DetectDuckieNode(DTROS):
     def __init__(self, node_name):
         # Initialize the DTROS parent class
         super(DetectDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
-        
-        self._model = YOLO("packages/followlane/assets/model.pt")  # YOLO model path
-
         self._vehicle_name = os.environ['VEHICLE_NAME']
-        self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
-        self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.cbDetectObjects)
+        
+        self._model = YOLO("packages/followlane/assets/model_detectDuckie.pt")  # YOLO model path
 
+        # Subscriber for camera images
+        # The camera topic is constructed using the vehicle name from the environment variable
+        self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
+        self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.cbDetectObjects, queue_size=1)
+
+        # Publisher for image with bounding boxes
         self._yolo_topic = f"/{self._vehicle_name}/detect/duckie/image"
         self.pup_image = rospy.Publisher(self._yolo_topic, Image, queue_size=1)
 
-        self._duckie_topic = f"/{self._vehicle_name}/detect/duckie"
-        self.pup_duckie = rospy.Publisher(self._duckie_topic, Float64, queue_size=1)
-
-        twist_topic = f"/{self._vehicle_name}/car_cmd_switch_node/cmd"
-        self.pub_cmd_vel = rospy.Publisher(twist_topic, Twist2DStamped, queue_size=1)
+        # Publisher for nearest duckie coordinates
+        # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
+        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/duckie/nearestBB"
+        self.pup_duckieNearestBB = rospy.Publisher(self._duckieNearestBB_topic, Float64MultiArray, queue_size=1)
 
         with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
         self._bridge = CvBridge()
-
-        self._window = "duckie-detection"
+        self.frame_count = 0
 
     def cbDetectObjects(
             self,
             image_msg
         ):
+        self.frame_count += 1
+        if self.frame_count % 5 != 0:  # Nur jedes 5. Bild verarbeiten
+            return
+
         # 1. Convert CompressedImage message to OpenCV image
-        np_arr = np.frombuffer(image_msg.data, np.uint8)
-        cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        #np_arr = np.frombuffer(image_msg.data, np.uint8)
+        #cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        cv_image = self._bridge.compressed_imgmsg_to_cv2(image_msg)#, desired_encoding='bgr8')
+        
 
         # 2. Create an empty mask with the same size as the image
         mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
@@ -82,14 +90,17 @@ class DetectDuckieNode(DTROS):
 
         # 8. Draw bounding boxes around detected duckies
         img_bb = self.draw_bounding_boxes(filtered_results, cv_image)
+        self.latest_img = img_bb  # Nur das aktuellste Bild speichern
 
-        # 9. Show polygon overlay
-        cv2.imshow(self._window, img_bb)
-        cv2.waitKey(1)
-
-        # 10. Stop if duckie is nearer than value in config
+        # 9.1. Publish the image with bounding boxes
+        if img_bb is not None:
+            img_msg = self._bridge.cv2_to_imgmsg(img_bb, encoding='bgr8')
+            self.pup_image.publish(img_msg)
+        # 9.2. Publish the nearest duckie bounding box coordinates
         if nearestDuckie is not None:
-            flag_stopped = self.stop_duckie(nearestDuckie)
+            x1, y1, x2, y2 = map(int, nearestDuckie.xyxy[0])
+            nearest_bb_msg = Float64MultiArray(data=[x1, y1, x2, y2])
+            self.pup_duckieNearestBB.publish(nearest_bb_msg)
 
 
     def get_polygon(self):
@@ -161,22 +172,12 @@ class DetectDuckieNode(DTROS):
                     print(f"    y2: {y2}")
 
         return img
-    
 
-    def stop_duckie(
-            self,
-            nearestDuckie
-    ):
-        y_min4stop = self.conf['min_distance_nearestDuckie']
-
-        x1, y1, x2, y2 = map(int, nearestDuckie.xyxy[0])
-        if y2 <= y_min4stop:
-            rospy.loginfo("Duckie in the way. Sending stop command...")
-            stop_msg = Twist2DStamped(v=0.0, omega=0.0)
-            
-            for _ in range(5):
-                rospy.sleep(0.05)
-                self.pub_cmd_vel.publish(stop_msg)
+    def display_loop(self):
+        while True:
+            if self.latest_img is not None:
+                cv2.imshow(self._window, self.latest_img)
+                cv2.waitKey(1)
 
 
 if __name__ == '__main__':
