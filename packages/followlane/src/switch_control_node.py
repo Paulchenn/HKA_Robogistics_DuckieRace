@@ -19,12 +19,16 @@ class SwitchControlNode(DTROS):
         self.sub_duckie = rospy.Subscriber(f"/{self._vehicle_name}/detect/duckie/bypass_cmd", Twist2DStamped, self.cbDuckieDetected, queue_size=1)
         self.sub_lane = rospy.Subscriber(f"/{self._vehicle_name}/detect/lane", Float64, self.cbLaneDetected, queue_size=1)
         self.pub_control = rospy.Publisher(f"/{self._vehicle_name}/switch/control", Int32, queue_size=1)
+
+        # Publisher for driving commands
+        twist_topic = f"/{self._vehicle_name}/car_cmd_switch_node/cmd"
+        self.pub_cmd_vel = rospy.Publisher(twist_topic, Twist2DStamped, queue_size=1)
         
         self._control_mode = ControlType.Lane
 
     def cbDuckieDetected(self, msg):
         # Noch keine Logik implementiert
-        print(msg)
+        self.pub_cmd_vel.publish(msg)
 
     def cbLaneDetected(self, msg):
         # Noch keine Logik implementiert
