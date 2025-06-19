@@ -45,7 +45,7 @@ class CameraReaderNode(DTROS):
         ]], dtype=np.int32)
 
     def compute_target_x_from_polygon(self, polygon, mask_white, mask_yellow, image):
-        min_area = 400
+        min_area = 100
         mask_poly = np.zeros_like(mask_white)
         cv2.fillPoly(mask_poly, polygon, 255)
         mw = cv2.bitwise_and(mask_white, mask_poly)
@@ -93,7 +93,8 @@ class CameraReaderNode(DTROS):
                     rospy.loginfo(f"[Gelb] {i}: Schwerpunkt nicht berechenbar (m00 = 0)")
                 continue
             cx = int(M['m10'] / M['m00'])
-            rospy.loginfo(f"[Gelb] {i}: Schwerpunkt X = {cx}, Fläche = {area:.1f}")
+            if self.debug:
+                rospy.loginfo(f"[Gelb] {i}: Schwerpunkt X = {cx}, Fläche = {area:.1f}")
             if rightmost_x is None or cx > rightmost_x:
                 rightmost_x = cx
                 cv2.drawContours(image, [cnt], -1, (0, 255, 255), 2)
@@ -125,11 +126,19 @@ class CameraReaderNode(DTROS):
             mask_white = cv2.inRange(hsv, (wh['hl'], wh['sl'], wh['vl']), (wh['hh'], wh['sh'], wh['vh']))
             mask_yellow = cv2.inRange(hsv, (gh['hl'], gh['sl'], gh['vl']), (gh['hh'], gh['sh'], gh['vh']))
 
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (12, 12))
+            if self.debug:
+                cv2.imshow("hsv-white", mask_white)
+                cv2.imshow("hsv-yellow", mask_yellow)
+
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
             mask_white = cv2.morphologyEx(mask_white, cv2.MORPH_OPEN, kernel)
             mask_white = cv2.morphologyEx(mask_white, cv2.MORPH_CLOSE, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_OPEN, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
+
+            if self.debug:
+                cv2.imshow("kernel-white", mask_white)
+                cv2.imshow("kernel-yellow", mask_yellow)
 
             polygon = self.create_polygon()
             target_x = self.compute_target_x_from_polygon(polygon, mask_white, mask_yellow, image)
