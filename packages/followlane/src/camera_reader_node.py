@@ -184,7 +184,7 @@ class CameraReaderNode(DTROS):
         threshold = 5000 #Schwellenwert für die rote Line
         
         if red_pixels > threshold:
-            rospy.loginfo("Rote Linie erkannt, stoppe den Duckiebot!")
+            #rospy.loginfo("Rote Linie erkannt, stoppe den Duckiebot!")
             self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen
             self.pub_redline.publish(Bool(True))
 

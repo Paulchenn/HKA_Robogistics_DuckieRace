@@ -15,7 +15,10 @@ dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/intersection_handling_nod
 dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/switch_control_node.py" &
 
 # launch control lane node
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/control_lane_node.py" 
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/control_lane_node.py" &
+
+# launch control lane node
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/turning_process_node.py" 
 
 # wait for app to end
 dt-launchfile-join

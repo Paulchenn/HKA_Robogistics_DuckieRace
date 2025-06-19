@@ -55,7 +55,7 @@ class RedLineDetector(DTROS):
 
         filtered_contours_red = [cnt for cnt in contours_red if cv2.contourArea(cnt) > min_area]
         turning_options = len(filtered_contours_red) -1
-        rospy.loginfo(f"Wegoptionen: {turning_options}")
+        #rospy.loginfo(f"Wegoptionen: {turning_options}")
         
         for cnt in filtered_contours_red:
             x, y, w, h = cv2.boundingRect(cnt)
@@ -63,7 +63,7 @@ class RedLineDetector(DTROS):
 
 
         if contours_red:
-            rospy.loginfo("Rote Kontur gefunden")
+            #rospy.loginfo("Rote Kontur gefunden")
             # Größte Kontur verwenden (optional)
             largest_contour = max(contours_red, key=cv2.contourArea)
             x, y, w, h = cv2.boundingRect(largest_contour)
@@ -71,7 +71,7 @@ class RedLineDetector(DTROS):
 
             # Visualisierung Bounding Box
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 2)
-            rospy.loginfo(f"Rote Kontur gefunden – x:{x}, y:{y}, w:{w}, h:{h}")
+            #rospy.loginfo(f"Rote Kontur gefunden – x:{x}, y:{y}, w:{w}, h:{h}")
 
         height, width = frame.shape[:2]
         half_height, half_width = height // 2, width // 2
@@ -86,36 +86,71 @@ class RedLineDetector(DTROS):
 
 
         turn_left = turn_straight = turn_right = False  # Initialisierung
+        # Schritt 1: Liste mit möglichen Richtungen erstellen
+        options = []
 
         for contour in filtered_contours_red:
             x, y, w, h = cv2.boundingRect(contour)
             center_x = x + w // 2
             center_y = y + h // 2
+            cv2.circle(frame, (center_x,center_y), radius=1,color=(200, 255, 100), thickness=-1)
+            #cv2.circle(frame, center_y, radius=1,color=(200, 255, 100), thickness=-1)
 
             # Nur obere Bildhälfte (oberhalb der waagerechten Linie)
             if center_y < 3 * quarter_height:
 
-                if center_x < fifth_width:
+                if center_x <= fifth_width:
                     turn_left = True
-                    rospy.loginfo("Links")
-                if fifth_width < center_x < half_width:
+                    if "links" not in options:
+                        options.append("links")
+                    #rospy.loginfo("Links")
+                if fifth_width < center_x <= half_width:
                     turn_straight = True
-                    rospy.loginfo("Geradeaus")
+                    if "geradeaus" not in options:
+                        options.append("geradeaus")
+                    #rospy.loginfo("Geradeaus")
                 if center_x > half_width:
                     turn_right = True
-                    rospy.loginfo("Rechts")
-                rospy.loginfo(f"Links:{turn_left}, Mitte:{turn_straight}, Rechts:{turn_right}")
+                    if "rechts" not in options:
+                        options.append("rechts")
+                    #rospy.loginfo("Rechts")
+        rospy.loginfo_throttle(1,f"Links:{turn_left}, Mitte:{turn_straight}, Rechts:{turn_right}")
+
+    
+
+        # Schritt 2: Zufällige Auswahl treffen, falls Optionen vorhanden sind
+        if options:
+            chosen_direction = random.choice(options)
+            rospy.loginfo_throttle(2,f"Zufällig gewählte Richtung: {chosen_direction}")
+            self.pub_red_line_info.publish(String(data=chosen_direction))
+            #self.pub_random_turn = rospy.Publisher(f"/{self._vehicle_name}/random_turn", String, queue_size=10)
 
 
+
+        # if turning_options == 3:
+        #     x = random.choice(turn_left,turn_straight,turn_right)
+        # elif turning_options ==2:
+        #     if turn_left & turn_straight:
+        #         x = random.choice(turn_left,turn_straight)
+        #     elif turn_left & turn_right:
+        #         x = random.choice(turn_left,turn_right)
+        #     elif turn_straight & turn_right:
+        #         x = random.choice(turn_straight,turn_right)
+        # elif turning_options ==1:
+        #     if turn_left:
+        #         x = turn_left
+        #     elif turn_straight:
+        #         x = turn_straight
+        #     elif turn_right:
+        #         x = turn_right
 
         num_red_lines = len(contours_red)
         num_filtered_red_lines = len(filtered_contours_red)
-        rospy.loginfo(f"Linien: {num_red_lines}")
-        rospy.loginfo(f"Gefilterte Linien: {num_filtered_red_lines}")
+        #rospy.loginfo(f"Linien: {num_red_lines}")
+        #rospy.loginfo(f"Gefilterte Linien: {num_filtered_red_lines}")
         red_pixels = cv2.countNonZero(mask_red)
-        rospy.loginfo(f"Rote Pixel: {red_pixels}")
-        message = f"Linien: {num_red_lines}"
-        self.pub_red_line_info.publish(message)
+        #rospy.loginfo(f"Rote Pixel: {red_pixels}")
+        #message = f"Linien: {num_red_lines}"
 
         # Optional: Bild speichern statt `cv2.imshow()`
         cv2.imshow("/data/processed_image.jpg", frame)
@@ -123,7 +158,7 @@ class RedLineDetector(DTROS):
 
     def process_stop_line(self, msg):
         if msg.data:
-            rospy.loginfo("Stoplinie erkannt, Verarbeitung läuft...")
+            rospy.loginfo_throttle(5, "Stoplinie erkannt, Verarbeitung läuft...")
 
 if __name__ == "__main__":
     #rospy.init_node("red_line_detector", anonymous=True)
