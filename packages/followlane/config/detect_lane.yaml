@@ -6,26 +6,29 @@ duck:
   vh: 255
   vl: 200
 lane_image:
-  bottom_right_x: 680
+  bottom_right_x: 638
   bottom_right_y: 470
-  bottom_left_x: -45
+  bottom_left_x: 0
   bottom_left_y: 470
-  top_left_x: 20
-  top_left_y: 400
-  top_right_x: 605
-  top_right_y: 400
+  top_left_x: 75
+  top_left_y: 300
+  top_right_x: 545
+  top_right_y: 300
 white:
   hl: 0
   hh: 255
-  sl: 39
-  sh: 87
-  vl: 158
+  sl: 0
+  sh: 82
+  vl: 151
   vh: 255
 gelb:
-  hl: 0
-  hh: 71
-  sl: 123
+  hl: 8
+  hh: 79
+  sl: 82
   sh: 255
-  vl: 133
-  vh: 255
+  vl: 100
+  vh: 215
+v_min: 0.05
+v_max: 0.15
+
 
