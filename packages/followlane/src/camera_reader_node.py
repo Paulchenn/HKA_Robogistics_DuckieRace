@@ -11,6 +11,7 @@ from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
 from std_msgs.msg import Float64
 
+
 class CameraReaderNode(DTROS):
     def __init__(self, node_name):
         super(CameraReaderNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
@@ -31,6 +32,9 @@ class CameraReaderNode(DTROS):
         rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback)
         self.pub_lane = rospy.Publisher(f"/{self._vehicle_name}/detect/lane", Float64, queue_size=1)
         rospy.on_shutdown(self.fnShutDown)
+        self.pub_left_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/left_x", Float64, queue_size=1)
+        self.pub_right_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/right_x", Float64, queue_size=1)
+
 
     def image_callback(self, msg):
         self.image = self._bridge.compressed_imgmsg_to_cv2(msg)
@@ -102,13 +106,18 @@ class CameraReaderNode(DTROS):
             rospy.loginfo(f"[Auswertung] Weiß X: {leftmost_x}, Gelb X: {rightmost_x}")
 
         if leftmost_x is not None and rightmost_x is not None:
-            return ((leftmost_x + rightmost_x) / 2) - 30
+            self.pub_right_x.publish(Float64(rightmost_x))
+            self.pub_left_x.publish(Float64(leftmost_x))
+            return ((leftmost_x + rightmost_x) / 2)
         elif rightmost_x is not None:
-            return rightmost_x + 170
+            self.pub_right_x.publish(Float64(rightmost_x))
+            return rightmost_x + 200
         elif leftmost_x is not None:
-            return leftmost_x - 230
+            self.pub_left_x.publish(Float64(leftmost_x))
+            return leftmost_x - 200
         else:
             return None
+
 
     def run(self):
         rate = rospy.Rate(10)
@@ -159,7 +168,7 @@ class CameraReaderNode(DTROS):
                 self.pub_lane.publish(Float64(smoothed_x))
 
             # Mittelpunkt markieren (immer)
-            center_x = int(640 / 2)
+            center_x = int((640 / 2))
             center_y = image.shape[0] - 50  # gleiche Höhe wie Target
             cv2.circle(image, (center_x, center_y), 6, (0, 0, 255), -1)
             cv2.putText(image, "Center", (center_x - 25, center_y - 10),

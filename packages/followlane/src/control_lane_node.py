@@ -14,26 +14,34 @@ class ControlLaneNode(DTROS):
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self.enable = False
+        self.debug = False  # Debug-Modus für Konsolenausgaben
 
         # Konfiguration laden
-        self._config_path = 'packages/followlane/config/detect_lane.yaml'
-        with open(self._config_path, 'r') as f:
+        config_path = 'packages/followlane/config/detect_lane.yaml'
+        with open(config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
+
         self.v_min = self.conf.get("v_min", 0.1)
         self.v_max = self.conf.get("v_max", 0.3)
 
-        # Publisher – nicht direkt an Motor, sondern an SwitchControlNode weiterleiten
-        lane_cmd_topic = f"/{self._vehicle_name}/car_cmd/lane"
+        # Publisher – an SwitchControlNode weitergeleitetes Regler-Kommando
+        lane_cmd_topic = f"/{self._vehicle_name}/car_cmd_switch_node/cmd"
         self.pub_lane_twist = rospy.Publisher(lane_cmd_topic, Twist2DStamped, queue_size=1)
 
-        # Subscriber
-        self.sub_lane = rospy.Subscriber(f"/{self._vehicle_name}/detect/lane", Float64, self.cbFollowLane, queue_size=1)
-        self.sub_control = rospy.Subscriber(f"/{self._vehicle_name}/switch/control", Int32, self.cbControl, queue_size=1)
+        # Subscriber für Ziel-X vom SwitchControlNode
+        self.sub_target_x = rospy.Subscriber(
+            f"/{self._vehicle_name}/control/selected_x", Float64, self.cbFollowLane, queue_size=1
+        )
+
+        # Subscriber für aktuellen Steuerungsmodus (Lane oder Obstacle)
+        self.sub_control = rospy.Subscriber(
+            f"/{self._vehicle_name}/switch/control", Int32, self.cbControl, queue_size=1
+        )
 
         # PID Parameter
-        self.kp = 2.5
-        self.ki = 0.3
-        self.kd = 0.2
+        self.kp = 10
+        self.ki = 0.1
+        self.kd = 0.4
 
         self.integral = 0.0
         self.last_error = 0.0
@@ -42,15 +50,19 @@ class ControlLaneNode(DTROS):
         rospy.on_shutdown(self.fnShutDown)
 
     def cbControl(self, msg):
-        self.enable = (msg.data == ControlType.Lane.value)
-        rospy.loginfo(f"[CONTROL] Lane following {'ENABLED' if self.enable else 'DISABLED'}")
+        self.enable = (msg.data == ControlType.Lane.value or msg.data == ControlType.Obstacle.value)
+        if self.debug:
+            rospy.loginfo(f"[CONTROL] Fahrmodus {'aktiviert' if self.enable else 'deaktiviert'} (Modus: {msg.data})")
 
     def cbFollowLane(self, desired_center):
         if not self.enable:
+            if self.debug:
+                rospy.loginfo("[CONTROL] Regelung deaktiviert – kein Kommando")
             return
 
-        center = desired_center.data
-        self.followLane(center)
+        if self.debug:
+            rospy.loginfo(f"[CONTROL] Empfange Ziel-X: {desired_center.data}")
+        self.followLane(desired_center.data)
 
     def followLane(self, center):
         image_center = 640 / 2
@@ -60,7 +72,7 @@ class ControlLaneNode(DTROS):
         dt = (current_time - self.last_time).to_sec()
         self.last_time = current_time
 
-        # PID Berechnung
+        # PID-Regelung
         self.integral += error * dt
         derivative = (error - self.last_error) / dt if dt > 0 else 0.0
         self.last_error = error
@@ -68,21 +80,26 @@ class ControlLaneNode(DTROS):
         omega = self.kp * error + self.ki * self.integral + self.kd * derivative
         omega = max(min(omega, 5.0), -5.0)
 
-        # Dynamische Geschwindigkeit
+        # Geschwindigkeitsanpassung
         error_abs = min(abs(error), 1.0)
         v = self.v_max - (self.v_max - self.v_min) * error_abs
 
+        # Befehl senden
         twist = Twist2DStamped()
         twist.header.stamp = rospy.Time.now()
         twist.v = v
         twist.omega = omega
-
         self.pub_lane_twist.publish(twist)
 
-        #rospy.loginfo(f"[PID] e={error:.3f}, P={self.kp * error:.3f}, I={self.ki * self.integral:.3f}, D={self.kd * derivative:.3f}, ω={omega:.3f}, v={v:.3f}")
+        if self.debug:
+            rospy.loginfo(
+                f"[PID] e={error:.3f}, P={self.kp * error:.3f}, I={self.ki * self.integral:.3f}, "
+                f"D={self.kd * derivative:.3f}, ω={omega:.3f}, v={v:.3f}"
+            )
 
     def fnShutDown(self):
-        rospy.loginfo("[SHUTDOWN] Sending stop command...")
+        if self.debug:
+            rospy.loginfo("[SHUTDOWN] Stoppe Fahrzeug")
         stop_msg = Twist2DStamped(v=0.0, omega=0.0)
         for _ in range(5):
             self.pub_lane_twist.publish(stop_msg)

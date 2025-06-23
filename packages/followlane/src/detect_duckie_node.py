@@ -101,6 +101,11 @@ class DetectDuckieNode(DTROS):
             x1, y1, x2, y2 = map(int, nearestDuckie.xyxy[0])
             nearest_bb_msg = Float64MultiArray(data=[x1, y1, x2, y2])
             self.pup_duckieNearestBB.publish(nearest_bb_msg)
+        else:
+            # Wichtig: Leere Nachricht senden, damit Bypass-Node zuverlässig aufgerufen wird
+            nearest_bb_msg = Float64MultiArray(data=[])
+            self.pup_duckieNearestBB.publish(nearest_bb_msg)
+
 
 
     def get_polygon(self):

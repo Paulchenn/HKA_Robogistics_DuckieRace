@@ -3,11 +3,11 @@ lane_image:
   bottom_right_y: 470
   bottom_left_x: 40
   bottom_left_y: 470
-  top_left_x: 240
-  top_left_y: 240
+  top_left_x: 260
+  top_left_y: 170
   top_right_x: 370
-  top_right_y: 240
+  top_right_y: 170
 
-min_distance_nearestDuckie: 330
+min_distance_nearestDuckie: 250
 
 show_image: false
