@@ -78,12 +78,22 @@ class RedLineDetector(DTROS):
         quarter_height, fifth_width = height //4, width // 5
 
         # Horizontale Linie (von ganz links nach ganz rechts in der Mitte)
-        cv2.line(frame, (0,(3*quarter_height) ), (width, (3*quarter_height)), (0, 255, 0), 2)  # grün, 2 Pixel dick
+        # cv2.line(frame, (0,(3*quarter_height) ), (width, (3*quarter_height)), (0, 255, 0), 2)  # grün, 2 Pixel dick
+        y_horizontal = 3 * quarter_height
+        cv2.line(frame, (0, y_horizontal), (width, y_horizontal), (0, 255, 0), 2)  # grün, 2 Pixel dick
+
+        # Berechnung der Schnittpunkte der horizontalen Linie mit dem Bildrand
+        left_intersection = (0, y_horizontal)
+        right_intersection = (width, y_horizontal)
+        rospy.loginfo_throttle(2, f"Schnittpunkte der horizontalen Linie: links={left_intersection}, rechts={right_intersection}")
+
+        # Optional: Markiere die Schnittpunkte im Bild
+        cv2.circle(frame, left_intersection, 5, (255, 0, 0), -1)  # Blau
+        cv2.circle(frame, right_intersection, 5, (255, 0, 0), -1)  # Blau
 
         # Vertikale Linie (von ganz oben nach ganz unten in der Mitte)
         cv2.line(frame, (fifth_width, 0), (fifth_width, height), (0, 255, 0), 2)  # grün, 2 Pixel dick
         cv2.line(frame, (half_width, 0), (half_width, height), (0, 255, 0), 2)  # grün, 2 Pixel dick
-
 
         turn_left = turn_straight = turn_right = False  # Initialisierung
         # Schritt 1: Liste mit möglichen Richtungen erstellen
