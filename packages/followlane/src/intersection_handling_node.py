@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import random
 import os
+import json
 import rospy
 from duckietown.dtros import DTROS, NodeType
 from std_msgs.msg import String, Bool
@@ -87,6 +88,7 @@ class RedLineDetector(DTROS):
         right_intersection = (width, y_horizontal)
         rospy.loginfo_throttle(2, f"Schnittpunkte der horizontalen Linie: links={left_intersection}, rechts={right_intersection}")
 
+
         # Optional: Markiere die Schnittpunkte im Bild
         cv2.circle(frame, left_intersection, 5, (255, 0, 0), -1)  # Blau
         cv2.circle(frame, right_intersection, 5, (255, 0, 0), -1)  # Blau
@@ -132,7 +134,11 @@ class RedLineDetector(DTROS):
         if options:
             chosen_direction = random.choice(options)
             rospy.loginfo_throttle(2,f"Zufällig gewählte Richtung: {chosen_direction}")
-            self.pub_red_line_info.publish(String(data=chosen_direction))
+            data = {"richtung" : chosen_direction, "left": left_intersection, "right":right_intersection}
+            msg = String()
+            msg.data = json.dumps(data)
+            
+            self.pub_red_line_info.publish(msg)
             #self.pub_random_turn = rospy.Publisher(f"/{self._vehicle_name}/random_turn", String, queue_size=10)
 
 
@@ -163,7 +169,7 @@ class RedLineDetector(DTROS):
         #message = f"Linien: {num_red_lines}"
 
         # Optional: Bild speichern statt `cv2.imshow()`
-        cv2.imshow("/data/processed_image.jpg", frame)
+        cv2.imshow("Rote_Linien_erkennen", frame)
         cv2.waitKey(1)
 
     def process_stop_line(self, msg):
