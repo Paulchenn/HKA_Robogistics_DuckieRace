@@ -1,4 +1,5 @@
 import os
+import cv2
 
 from ultralytics import YOLO
 
@@ -8,17 +9,21 @@ if os.getcwd() != os.path.dirname(os.path.abspath(__file__)):
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Load the trained model
-model_best  = YOLO(os.path.join(os.getcwd(), "results/bots/bots-train/weights/best.pt"))   # load the best model
-model_last  = YOLO(os.path.join(os.getcwd(), "results/bots/bots-train/weights/last.pt"))   # load the latest model
+model_best  = YOLO(os.path.join(os.getcwd(), "results/duckieBotSlot/weights/best.pt"))   # load the best model
+model_last  = YOLO(os.path.join(os.getcwd(), "results/duckieBotSlot/weights/last.pt"))   # load the latest model
 
 # Run inference on an image
-picName = "wBotNear.png"
+picName = "woDuckies.png"
+img_path = os.path.join(os.getcwd(), "testPics", picName)
 results = model_best(
-    os.path.join(os.getcwd(), "testPics", picName),  # predict on an image
+    img_path,  # predict on an image
     save=True,
     project="results/predictions",
     name=picName
 )
+
+# Load the image for drawing
+img = cv2.imread(img_path)
 
 # Loop over detected results
 cls_id = None
@@ -38,3 +43,12 @@ for result in results:
             # Print the detected class name 
             label = model_best.names[cls_id]
             print(f"Detected {label} with confidence {conf:.2f}")
+            # Draw bounding box and label on the image
+            x1, y1, x2, y2 = map(int, xyxy)
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(img, f"{label} {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+# Show the image with bounding boxes and labels
+cv2.imshow("Detections", img)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
