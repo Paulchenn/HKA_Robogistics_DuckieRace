@@ -36,6 +36,8 @@ class DisplayDetectedDuckieNode(DTROS):
         
         self.last_save_time = time.time()
         self.save_path = "/home/QuackSquad/dataset_botSlot"
+
+        self.myTime = 3
         
 
     def cbShowImage(
@@ -55,7 +57,7 @@ class DisplayDetectedDuckieNode(DTROS):
             cv2.waitKey(1)
             
             now = time.time()
-            if now - self.last_save_time > 5:
+            if now - self.last_save_time > self.myTime:
                 filename = f"{self.save_path}/bild_{int(now)}.jpg"
                 cv2.imwrite(filename, self.latest_img)
                 print(f"Bild gespeichert: {filename}")
