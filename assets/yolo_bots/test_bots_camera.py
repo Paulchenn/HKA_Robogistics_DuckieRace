@@ -6,7 +6,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 # Load the trained YOLOv8 model relative to the script location
-model = YOLO(BASE_DIR / "results/duckies/duckie-train/weights/best.pt")
+model = YOLO(BASE_DIR / "results/bots/bots-train/weights/best.pt")
 
 # Open default camera
 cap = cv2.VideoCapture(0)
