@@ -137,9 +137,11 @@ class RedLineDetector(DTROS):
             data = {"richtung" : chosen_direction, "left": left_intersection, "right":right_intersection}
             msg = String()
             msg.data = json.dumps(data)
-            
-            self.pub_red_line_info.publish(msg)
-            #self.pub_random_turn = rospy.Publisher(f"/{self._vehicle_name}/random_turn", String, queue_size=10)
+
+            if self.direction_already_published == False:           
+                self.pub_red_line_info.publish(msg)
+                self.direction_already_published = True
+                #self.pub_random_turn = rospy.Publisher(f"/{self._vehicle_name}/random_turn", String, queue_size=10)
 
 
 
@@ -174,6 +176,7 @@ class RedLineDetector(DTROS):
 
     def process_stop_line(self, msg):
         if msg.data:
+            self.direction_already_published = False
             rospy.loginfo_throttle(5, "Stoplinie erkannt, Verarbeitung läuft...")
 
 if __name__ == "__main__":
