@@ -67,6 +67,9 @@ class RedLineListener(DTROS):
         # Vertikale Linie für geradeaus fahren
         cv2.line(frame, (half_width, 400), (half_width, third_height), (0, 255, 0), 2)  # grün, 2 Pixel dick
 
+    def publish_turn_direction(direction):
+
+
 
 
 
