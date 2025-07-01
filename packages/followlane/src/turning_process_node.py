@@ -241,6 +241,7 @@ class RedLineListener(DTROS):
  
 
     def drive_to_pixel(self):
+        pass
 
     def publish_turn_direction(direction):
 
