@@ -26,6 +26,8 @@ class RedLineDetector(DTROS):
         # Subscriber für die Stop-Line-Erkennung
         self.sub_redline = rospy.Subscriber(self._redLine_topic,
                                             Bool, self.process_stop_line, queue_size=1)
+        
+        self.direction_already_published = False
 
     def process_image(self, msg):
         # Bild aus der Message dekodieren
@@ -137,6 +139,7 @@ class RedLineDetector(DTROS):
             data = {"richtung" : chosen_direction, "left": left_intersection, "right":right_intersection}
             msg = String()
             msg.data = json.dumps(data)
+            #self.direction_already_published = False
 
             if self.direction_already_published == False:           
                 self.pub_red_line_info.publish(msg)
