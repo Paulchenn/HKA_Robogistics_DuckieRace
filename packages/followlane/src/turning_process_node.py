@@ -242,6 +242,9 @@ class RedLineListener(DTROS):
 
     def drive_to_pixel(self):
 
+    def publish_turn_direction(direction):
+
+
 
         # Testfunktion: Fahre gezielt zu einem festen Punkt im Bild.
         # Diese Methode abonniert den Kamera-Stream und steuert den Bot
