@@ -18,17 +18,17 @@ white:
   hl: 0
   hh: 255
   sl: 0
-  sh: 79
+  sh: 75
   vl: 118
   vh: 255
 gelb:
-  hl: 19
-  hh: 38
-  sl: 93
-  sh: 255
-  vl: 110
-  vh: 208
-v_min: 0.15
-v_max: 0.3
+  hl: 16
+  hh: 35
+  sl: 80
+  sh: 179
+  vl: 90
+  vh: 255
+v_min: 0.2
+v_max: 0.4
 
 

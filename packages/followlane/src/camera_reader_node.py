@@ -105,7 +105,7 @@ class CameraReaderNode(DTROS):
         if self.debug:
             rospy.loginfo(f"[Auswertung] Weiß X: {leftmost_x}, Gelb X: {rightmost_x}")
 
-        if leftmost_x is not None and rightmost_x is not None:
+        if leftmost_x is not None and rightmost_x is not None and leftmost_x > rightmost_x:
             self.pub_right_x.publish(Float64(rightmost_x))
             self.pub_left_x.publish(Float64(leftmost_x))
             return ((leftmost_x + rightmost_x) / 2)

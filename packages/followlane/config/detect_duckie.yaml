@@ -8,6 +8,6 @@ lane_image:
   top_right_x: 370
   top_right_y: 170
 
-min_distance_nearestDuckie: 250
+min_distance_nearestDuckie: 230
 
 show_image: false

@@ -14,7 +14,8 @@ class ControlLaneNode(DTROS):
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self.enable = False
-        self.debug = False  # Debug-Modus für Konsolenausgaben
+        self.debug = True  # Debug-Modus für Konsolenausgaben
+        self.duckie_info = 0  # 0 = keine Ente, 1 = fern, 2 = nah
 
         # Konfiguration laden
         config_path = 'packages/followlane/config/detect_lane.yaml'
@@ -32,10 +33,13 @@ class ControlLaneNode(DTROS):
         self.sub_target_x = rospy.Subscriber(
             f"/{self._vehicle_name}/control/selected_x", Float64, self.cbFollowLane, queue_size=1
         )
-
-        # Subscriber für aktuellen Steuerungsmodus (Lane oder Obstacle)
-        self.sub_control = rospy.Subscriber(
-            f"/{self._vehicle_name}/switch/control", Int32, self.cbControl, queue_size=1
+        # Subscriber: Duckie-Erkennungsstatus
+        self.sub_duckie_info = rospy.Subscriber(
+            f"/{self._vehicle_name}/detect/duckie/info", Int32, self.cbDuckieInfo, queue_size=1
+        )
+        # Subscriber: Fahrzeugstatus (SwitchControlNode)
+        self.sub_vehicle_status = rospy.Subscriber(
+            f"/{self._vehicle_name}/switch/control", Int32, self.cbVehicleStatus, queue_size=1
         )
 
         # PID Parameter
@@ -49,10 +53,13 @@ class ControlLaneNode(DTROS):
 
         rospy.on_shutdown(self.fnShutDown)
 
-    def cbControl(self, msg):
-        self.enable = (msg.data == ControlType.Lane.value or msg.data == ControlType.Obstacle.value)
+    def cbDuckieInfo(self, msg: Int32):
+        self.duckie_info = msg.data
+
+    def cbVehicleStatus(self, msg: Int32):
+        self.enable = (msg.data == ControlType.Lane.value)
         if self.debug:
-            rospy.loginfo(f"[CONTROL] Fahrmodus {'aktiviert' if self.enable else 'deaktiviert'} (Modus: {msg.data})")
+            rospy.loginfo(f"[STATUS] Steuerung aktiv: {self.enable}")
 
     def cbFollowLane(self, desired_center):
         if not self.enable:
@@ -80,9 +87,14 @@ class ControlLaneNode(DTROS):
         omega = self.kp * error + self.ki * self.integral + self.kd * derivative
         omega = max(min(omega, 5.0), -5.0)
 
-        # Geschwindigkeitsanpassung
-        error_abs = min(abs(error), 1.0)
-        v = self.v_max - (self.v_max - self.v_min) * error_abs
+        # Geschwindigkeitsanpassung basierend auf Duckie-Info
+        if self.duckie_info == 2:
+            v = self.v_min  # Duckie Ausweichmanöver
+        elif self.duckie_info == 1:
+            v = self.v_min  # Duckie sehr nah
+        else:
+            error_abs = min(abs(error), 1.0)
+            v = self.v_max - (self.v_max - self.v_min) * error_abs
 
         # Befehl senden
         twist = Twist2DStamped()
@@ -94,7 +106,7 @@ class ControlLaneNode(DTROS):
         if self.debug:
             rospy.loginfo(
                 f"[PID] e={error:.3f}, P={self.kp * error:.3f}, I={self.ki * self.integral:.3f}, "
-                f"D={self.kd * derivative:.3f}, ω={omega:.3f}, v={v:.3f}"
+                f"D={self.kd * derivative:.3f}, ω={omega:.3f}, v={v:.3f} [Duckie-Info: {self.duckie_info}]"
             )
 
     def fnShutDown(self):
