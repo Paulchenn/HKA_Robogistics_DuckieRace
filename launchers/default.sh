@@ -35,7 +35,11 @@ dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/detect_duckie_node.py" &
 
 dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/bypass_duckie_node.py" &
 
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/display_detectedDuckie_node.py"
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/display_detectedDuckie_node.py" &
+
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/intersection_handling_node.py" &
+
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/turning_process_node.py" 
 
 #dt-exec python3 "$DT_REPO_PATH/packages/testtim/my_script.py" 
 

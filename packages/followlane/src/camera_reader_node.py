@@ -132,6 +132,24 @@ class CameraReaderNode(DTROS):
             wh = self.conf['white']
             gh = self.conf['gelb']
 
+            rhl1, rhh1 = 0, 10
+            rhl2, rhh2 = 170,180
+            rsl,rsh = 100, 255
+            rvl, rvh = 100, 255
+            # Maske für Bereich 1
+            lower_red1 = np.array([rhl1, rsl, rvl])
+            upper_red1 = np.array([rhh1, rsh, rvh])
+            mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+
+            # Maske für Bereich 2
+            lower_red2 = np.array([rhl2, rsl, rvl])
+            upper_red2 = np.array([rhh2, rsh, rvh])
+            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+
+            # Beide Masken kombinieren
+            mask_red = cv2.bitwise_or(mask1, mask2)
+
+
             mask_white = cv2.inRange(hsv, (wh['hl'], wh['sl'], wh['vl']), (wh['hh'], wh['sh'], wh['vh']))
             mask_yellow = cv2.inRange(hsv, (gh['hl'], gh['sl'], gh['vl']), (gh['hh'], gh['sh'], gh['vh']))
 
@@ -145,6 +163,16 @@ class CameraReaderNode(DTROS):
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_OPEN, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
 
+
+            red_pixels = cv2.countNonZero(mask_red)
+            rospy.loginfo_throttle(1,f"Pixel wenn wir vorne stehen{red_pixels}")
+            threshold = 5000 #Schwellenwert für die rote Line
+        
+            if red_pixels > threshold:
+                #rospy.loginfo("Rote Linie erkannt, stoppe den Duckiebot!")
+                self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen
+                self.pub_redline.publish(Bool(True))
+ 
             if self.debug:
                 cv2.imshow("kernel-white", mask_white)
                 cv2.imshow("kernel-yellow", mask_yellow)
