@@ -10,3 +10,5 @@ lane_image:
 
 min_distance_nearestBot: 330
 
+show_image: true
+

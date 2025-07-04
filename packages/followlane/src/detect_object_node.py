@@ -41,17 +41,17 @@ class DetectParkingSlotNode(DTROS):
 
         # Publisher for nearest duckie coordinates
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
-        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object"
+        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestBB"
         self.pup_duckieNearestBB = rospy.Publisher(self._duckieNearestBB_topic, Float64MultiArray, queue_size=1)
 
         # Publisher for nearest bot coordinates
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
-        self._botNearestBB_topic = f"/{self._vehicle_name}/detect/object"
+        self._botNearestBB_topic = f"/{self._vehicle_name}/detect/object/botNearestBB"
         self.pup_botNearestBB = rospy.Publisher(self._botNearestBB_topic, Float64MultiArray, queue_size=1)
 
         # Publisher for nearest parking coordinates
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
-        self._parkingBB_topic = f"/{self._vehicle_name}/detect/object"
+        self._parkingBB_topic = f"/{self._vehicle_name}/detect/object/parkingBB"
         self.pup_parkingBB = rospy.Publisher(self._parkingBB_topic, Float64MultiArray, queue_size=1)
 
         with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
@@ -59,6 +59,9 @@ class DetectParkingSlotNode(DTROS):
 
         self._bridge = CvBridge()
         self.frame_count = 0
+
+        self._window1 = "Camera Feed"
+        self._window2 = "YOLOv8 Detection"
 
     def cbDetectObjects(self, image_msg):
         self.frame_count += 1
@@ -71,14 +74,12 @@ class DetectParkingSlotNode(DTROS):
         # 2. Run YOLO model on the image
         results = self._model(cv_image, conf=0.5, iou=0.5, agnostic_nms=True, verbose=False)
 
-        # 3. Zeichne Bounding Boxes um alle erkannten Objekte
-        img_bb = self.draw_bounding_boxes_all(results, cv_image)
-
-        self.latest_img = img_bb  # Aktuelles Bild speichern
+        # 2. Plot results on the image
+        annotated_frame = results[0].plot()
 
         # 4. Publish image mit Bounding Boxes
-        if img_bb is not None:
-            img_msg = self._bridge.cv2_to_imgmsg(img_bb, encoding='bgr8')
+        if annotated_frame is not None:
+            img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
             self.pup_image.publish(img_msg)
 
         # Optional: nearest Duckie weiterverarbeiten, falls benötigt
@@ -107,5 +108,5 @@ class DetectParkingSlotNode(DTROS):
 
 
 if __name__ == '__main__':
-    node = DetectParkingSlotNode(node_name='detect_parkingSlot_node')
+    node = DetectParkingSlotNode(node_name='detect_duckieBotSlot_node')
     rospy.spin()
