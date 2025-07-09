@@ -3,8 +3,8 @@ import numpy as np
 import rospy
 import os
 import json
-from std_msgs.msg import String, ColorRGBA
-from geometry_msgs.msg import Point, Twist
+from std_msgs.msg import String, ColorRGBA, Int32
+from geometry_msgs.msg import Point, Twist #TODO kann weg
 from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage, Image
 from duckietown_msgs.msg import LEDPattern #, LEDPatternArray
@@ -26,7 +26,7 @@ class RedLineListener(DTROS):
         self.direction_redline = rospy.Subscriber(self.direction_redline_topic, String, self.callback, queue_size=10)
         self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.process_image, queue_size=1)
  
-        self.cmd_pub = rospy.Publisher(f"/{self._vehicle_name}/zielpunkt", Point, queue_size=1)
+        self.cmd_pub = rospy.Publisher(f"/{self._vehicle_name}/zielpunkt", Int32, queue_size=1)
         self.left_point = None
         self.right_point = None
  
@@ -77,7 +77,7 @@ class RedLineListener(DTROS):
         cv2.line(frame, (half_width, 400), (half_width, third_height), (0, 255, 0), 2)
  
     def publish_turn_direction(self, direction):
-        zielpunkt = Point()
+        # zielpunkt = Point()
         self.pattern_on = LEDPattern()
         #self.blink_all_leds()
  
@@ -91,7 +91,7 @@ class RedLineListener(DTROS):
                 ColorRGBA(0, 0, 0, 1),          # Back Right - aus
                 ColorRGBA(1.0, 1.0, 0.0, 1.0)   # Back Left - gelb
             ]
-            # zielpunkt.x = 174.0
+            zielpunkt_x = 42
             # zielpunkt.y = 230.0
             # zielpunkt.z = 0.0
            # self.blink_all_leds()
@@ -104,18 +104,20 @@ class RedLineListener(DTROS):
                 ColorRGBA(1.0, 1.0, 0.0, 1.0),  # Back Right - gelb
                 ColorRGBA(0, 0, 0, 1)   # Back Left - aus
             ]
+            zielpunkt_x = 414
             # zielpunkt.x = 460.0
             # zielpunkt.y = 230.0
             # zielpunkt.z = 0.0
             #self.blink_all_leds()
         elif direction == "geradeaus":
+            zielpunkt_x = 223
             # zielpunkt.x = 320.0
             # zielpunkt.y = 180.0
-            zielpunkt.z = 0.0
+            #zielpunkt.z = 0.0
  
         #self.led_pub.publish(self.pattern_on)
-        self.cmd_pub.publish(zielpunkt)
-        rospy.loginfo(f"Zielpunkt publiziert: {zielpunkt}")
+        self.cmd_pub.publish(zielpunkt_x)
+        rospy.loginfo(f"Zielpunkt publiziert: {zielpunkt_x}")
  
 
     def drive_to_pixel(self):

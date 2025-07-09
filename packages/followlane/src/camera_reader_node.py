@@ -9,7 +9,7 @@ import time
 from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Bool
 
 
 class CameraReaderNode(DTROS):
@@ -34,7 +34,7 @@ class CameraReaderNode(DTROS):
         rospy.on_shutdown(self.fnShutDown)
         self.pub_left_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/left_x", Float64, queue_size=1)
         self.pub_right_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/right_x", Float64, queue_size=1)
-
+        self.pub_redline = rospy.Publisher(f"/{self._vehicle_name}/stop_line_detected", Bool, queue_size=1)
 
     def image_callback(self, msg):
         self.image = self._bridge.compressed_imgmsg_to_cv2(msg)
@@ -169,8 +169,8 @@ class CameraReaderNode(DTROS):
             threshold = 5000 #Schwellenwert für die rote Line
         
             if red_pixels > threshold:
-                #rospy.loginfo("Rote Linie erkannt, stoppe den Duckiebot!")
-                self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen
+                self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen TODO hier??
+                #rospy.sleep(3.0)    #für 3 Sekunden anhalten
                 self.pub_redline.publish(Bool(True))
  
             if self.debug:

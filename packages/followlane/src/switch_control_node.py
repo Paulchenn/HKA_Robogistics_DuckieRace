@@ -3,12 +3,13 @@
 import rospy
 import os
 from enum import Enum
-from std_msgs.msg import Float64, Int32
+from std_msgs.msg import Float64, Int32, Bool
 from duckietown.dtros import DTROS, NodeType
 
 class ControlType(Enum):
     Lane = 1
     Obstacle = 2
+    Turn = 3
 
 class SwitchControlNode(DTROS):
     def __init__(self, node_name):
@@ -17,9 +18,11 @@ class SwitchControlNode(DTROS):
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self._control_mode = ControlType.Lane
         self.duckie_info = 0  # 0 = nichts, 1 = Duckie fern, 2 = Duckie nah
+        self.redline_info = False #True = rote Linie erkannt, False = keine rote Linie
 
         self.lane_x = None
         self.bypass_x = None
+        self.turn_x = None
 
         self.debug = False
         self.debug_run = False
@@ -51,6 +54,15 @@ class SwitchControlNode(DTROS):
             f"/{self._vehicle_name}/detect/duckie/info", Int32, self.cbDuckieInfo, queue_size=1
         )
 
+        # Subscriber für die Stop-Line-Erkennung
+        self.sub_redline = rospy.Subscriber(f"/{self._vehicle_name}/stop_line_detected",
+                                            Bool, self.cbRedline, queue_size=1)
+        
+        #Subscriber: X-Wert vom Abbiegen
+        self.sub_turn_direction = rospy.Subscriber(f"/{self._vehicle_name}/zielpunkt", Int32, self.cbTurnInfo,queue_size=1)
+
+        
+
     def cbLaneX(self, msg: Float64):
         self.lane_x = msg.data
         if self.debug:
@@ -66,6 +78,16 @@ class SwitchControlNode(DTROS):
         if self.debug:
             rospy.loginfo(f"[SWITCH] Duckie-Status: {self.duckie_info}")
 
+    def cbRedline(self, msg: Bool):
+        self.redline_info = msg.data
+        if self.debug:
+            rospy.loginfo(f"[SWITCH] Rote Linien Status {self.redline_info}")
+
+    def cbTurnInfo(self, msg: Int32):
+        self.turn_x = msg.data
+        if self.debug:
+            rospy.loginfo(f"[SWITCH] Abbiegen Status {self.turn_x}")
+    
     def fnShutDown(self):
         if self.debug:
             rospy.loginfo("[SHUTDOWN] Node wird beendet.")
@@ -92,6 +114,13 @@ class SwitchControlNode(DTROS):
                     if self.debug_run:
                         rospy.loginfo("[RUN] Duckie fern – verwende Lane-X (langsam)")
 
+            elif self.redline_info == True:
+                self._control_mode = ControlType.Turn #Turning
+                if self.turn_x is not None:
+                    selected_x = self.turn_x
+                    if self.debug_run:
+                        rospy.loginfo(f"[RUN] Abbiegen – verwende Turn-X {self.turn_x}")
+            
             elif self.duckie_info == 0:
                 self._control_mode = ControlType.Lane
                 if self.lane_x is not None:
