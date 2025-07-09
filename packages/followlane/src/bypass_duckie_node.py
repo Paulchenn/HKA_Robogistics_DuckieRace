@@ -16,7 +16,7 @@ class BypassDuckieNode(DTROS):
     def __init__(self, node_name):
         super(BypassDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
-        self.debug = True
+        self.debug = False
 
         # Konfiguration
         with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:

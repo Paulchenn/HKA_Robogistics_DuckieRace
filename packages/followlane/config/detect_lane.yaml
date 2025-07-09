@@ -1,3 +1,4 @@
+show_debug: false
 duck:
   hh: 21
   hl: 0
@@ -18,17 +19,25 @@ white:
   hl: 0
   hh: 255
   sl: 0
-  sh: 75
-  vl: 118
+  sh: 60
+  vl: 137
   vh: 255
 gelb:
-  hl: 16
+  hl: 15
   hh: 35
   sl: 80
-  sh: 179
+  sh: 255
   vl: 90
   vh: 255
-v_min: 0.2
-v_max: 0.4
+red:
+  hl: 0
+  hh: 15
+  sl: 100
+  sh: 255
+  vl: 100
+  vh: 255
+
+v_min: 0
+v_max: 0
 
 

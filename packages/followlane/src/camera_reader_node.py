@@ -69,17 +69,11 @@ class CameraReaderNode(DTROS):
         for i, cnt in enumerate(contours_white):
             area = cv2.contourArea(cnt)
             if area <= min_area:
-                if self.debug:
-                    rospy.loginfo(f"[Weiß] {i}: zu klein (Fläche = {area:.1f})")
                 continue
             M = cv2.moments(cnt)
             if M['m00'] == 0:
-                if self.debug:
-                    rospy.loginfo(f"[Weiß] {i}: Schwerpunkt nicht berechenbar (m00 = 0)")
                 continue
             cx = int(M['m10'] / M['m00'])
-            if self.debug:
-                rospy.loginfo(f"[Weiß] {i}: Schwerpunkt X = {cx}, Fläche = {area:.1f}")
             if leftmost_x is None or cx < leftmost_x:
                 leftmost_x = cx
                 cv2.drawContours(image, [cnt], -1, (0, 255, 0), 2)
@@ -88,22 +82,14 @@ class CameraReaderNode(DTROS):
         for i, cnt in enumerate(contours_yellow):
             area = cv2.contourArea(cnt)
             if area <= min_area:
-                if self.debug:
-                    rospy.loginfo(f"[Gelb] {i}: zu klein (Fläche = {area:.1f})")
                 continue
             M = cv2.moments(cnt)
             if M['m00'] == 0:
-                if self.debug:
-                    rospy.loginfo(f"[Gelb] {i}: Schwerpunkt nicht berechenbar (m00 = 0)")
                 continue
             cx = int(M['m10'] / M['m00'])
-            if self.debug:
-                rospy.loginfo(f"[Gelb] {i}: Schwerpunkt X = {cx}, Fläche = {area:.1f}")
             if rightmost_x is None or cx > rightmost_x:
                 rightmost_x = cx
                 cv2.drawContours(image, [cnt], -1, (0, 255, 255), 2)
-        if self.debug:
-            rospy.loginfo(f"[Auswertung] Weiß X: {leftmost_x}, Gelb X: {rightmost_x}")
 
         if leftmost_x is not None and rightmost_x is not None and leftmost_x > rightmost_x:
             self.pub_right_x.publish(Float64(rightmost_x))
@@ -118,7 +104,6 @@ class CameraReaderNode(DTROS):
         else:
             return None
 
-
     def run(self):
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
@@ -131,31 +116,20 @@ class CameraReaderNode(DTROS):
             hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
             wh = self.conf['white']
             gh = self.conf['gelb']
+            rd = self.conf['red']
 
-            rhl1, rhh1 = 0, 10
-            rhl2, rhh2 = 170,180
-            rsl,rsh = 100, 255
-            rvl, rvh = 100, 255
-            # Maske für Bereich 1
-            lower_red1 = np.array([rhl1, rsl, rvl])
-            upper_red1 = np.array([rhh1, rsh, rvh])
+            # Zwei HSV-Bereiche für Rot (0–10 und 170–180)
+            lower_red1 = np.array([rd['hl'], rd['sl'], rd['vl']])
+            upper_red1 = np.array([rd['hh'], rd['sh'], rd['vh']])
+            lower_red2 = np.array([170, rd['sl'], rd['vl']])
+            upper_red2 = np.array([180, rd['sh'], rd['vh']])
+
             mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-
-            # Maske für Bereich 2
-            lower_red2 = np.array([rhl2, rsl, rvl])
-            upper_red2 = np.array([rhh2, rsh, rvh])
             mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-
-            # Beide Masken kombinieren
             mask_red = cv2.bitwise_or(mask1, mask2)
-
 
             mask_white = cv2.inRange(hsv, (wh['hl'], wh['sl'], wh['vl']), (wh['hh'], wh['sh'], wh['vh']))
             mask_yellow = cv2.inRange(hsv, (gh['hl'], gh['sl'], gh['vl']), (gh['hh'], gh['sh'], gh['vh']))
-
-            if self.debug:
-                cv2.imshow("hsv-white", mask_white)
-                cv2.imshow("hsv-yellow", mask_yellow)
 
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
             mask_white = cv2.morphologyEx(mask_white, cv2.MORPH_OPEN, kernel)
@@ -163,19 +137,14 @@ class CameraReaderNode(DTROS):
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_OPEN, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
 
-
             red_pixels = cv2.countNonZero(mask_red)
-            rospy.loginfo_throttle(1,f"Pixel wenn wir vorne stehen{red_pixels}")
-            threshold = 5000 #Schwellenwert für die rote Line
-        
-            if red_pixels > threshold:
-                self.pub_lane.publish(Float64(0)) #Geschwindigkeit auf 0 setzen TODO hier??
-                #rospy.sleep(3.0)    #für 3 Sekunden anhalten
-                self.pub_redline.publish(Bool(True))
- 
             if self.debug:
-                cv2.imshow("kernel-white", mask_white)
-                cv2.imshow("kernel-yellow", mask_yellow)
+                rospy.loginfo_throttle(1, f"Red Pixels: {red_pixels}")
+            threshold = 5000
+
+            if red_pixels > threshold:
+                self.pub_lane.publish(Float64(0))  # Optional: sofort anhalten
+                self.pub_redline.publish(Bool(True))
 
             polygon = self.create_polygon()
             target_x = self.compute_target_x_from_polygon(polygon, mask_white, mask_yellow, image)
@@ -188,20 +157,18 @@ class CameraReaderNode(DTROS):
                 smoothed_x = int(np.mean(self.target_x_buffer))
                 target_y = image.shape[0] - 50
 
-            
                 cv2.circle(image, (smoothed_x, target_y), 6, (255, 0, 255), -1)
                 cv2.putText(image, "Target", (smoothed_x - 20, target_y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-
                 self.pub_lane.publish(Float64(smoothed_x))
 
-            # Mittelpunkt markieren (immer)
-            center_x = int((640 / 2))
-            center_y = image.shape[0] - 50  # gleiche Höhe wie Target
+            # Center-Markierung
+            center_x = int(image.shape[1] / 2)
+            center_y = image.shape[0] - 50
             cv2.circle(image, (center_x, center_y), 6, (0, 0, 255), -1)
             cv2.putText(image, "Center", (center_x - 25, center_y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            
+
             cv2.polylines(image, polygon, isClosed=True, color=(255, 255, 255), thickness=2)
             cv2.imshow(self._window, image)
             cv2.waitKey(1)

@@ -9,7 +9,6 @@ from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
 
-
 class WhiteYellowCalibrationNode(DTROS):
     def __init__(self, node_name):
         super(WhiteYellowCalibrationNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
@@ -23,7 +22,8 @@ class WhiteYellowCalibrationNode(DTROS):
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
 
-        self.current_mode = 'white'  # or 'gelb'
+        self.mode_map = {0: 'white', 1: 'gelb', 2: 'red'}
+        self.current_mode = 'white'
         self.image = None
 
         rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback)
@@ -38,11 +38,11 @@ class WhiteYellowCalibrationNode(DTROS):
             val = self.conf[self.current_mode][name]
             cv2.createTrackbar(name, self._window, val, 255, nothing)
 
-        # 0 = white, 1 = gelb
-        cv2.createTrackbar("mode", self._window, 0, 1, self.switch_mode)
+        # 0 = white, 1 = gelb, 2 = red
+        cv2.createTrackbar("mode", self._window, 0, 2, self.switch_mode)
 
     def switch_mode(self, val):
-        self.current_mode = 'white' if val == 0 else 'gelb'
+        self.current_mode = self.mode_map.get(val, 'white')
         self.update_trackbars()
 
     def update_trackbars(self):
@@ -76,11 +76,14 @@ class WhiteYellowCalibrationNode(DTROS):
             upper = (vals['hh'], vals['sh'], vals['vh'])
             mask = cv2.inRange(hsv, lower, upper)
 
-            # Maske zur Anzeige
             output = self.image.copy()
-            output[mask > 0] = (0, 255, 255) if self.current_mode == 'gelb' else (255, 255, 255)
+            if self.current_mode == 'gelb':
+                output[mask > 0] = (0, 255, 255)
+            elif self.current_mode == 'red':
+                output[mask > 0] = (0, 0, 255)
+            else:
+                output[mask > 0] = (255, 255, 255)
 
-            # Zeige Maske auf Originalbild (deine original Imshow-Logik)
             cv2.imshow(self._window, output)
 
             key = cv2.waitKey(1) & 0xFF
@@ -94,7 +97,6 @@ class WhiteYellowCalibrationNode(DTROS):
                 break
 
         cv2.destroyAllWindows()
-
 
 if __name__ == '__main__':
     node = WhiteYellowCalibrationNode(node_name='white_yellow_calibration_node')
