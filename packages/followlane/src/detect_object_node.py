@@ -54,36 +54,105 @@ class DetectParkingSlotNode(DTROS):
         self._parkingBB_topic = f"/{self._vehicle_name}/detect/object/parkingBB"
         self.pup_parkingBB = rospy.Publisher(self._parkingBB_topic, Float64MultiArray, queue_size=1)
 
-        with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
+        with open('packages/followlane/config/detect_duckieBotSlot.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
         self._bridge = CvBridge()
         self.frame_count = 0
-
-        self._window1 = "Camera Feed"
-        self._window2 = "YOLOv8 Detection"
+        
 
     def cbDetectObjects(self, image_msg):
         self.frame_count += 1
-        if self.frame_count % 5 != 0:  # Nur jedes 5. Bild verarbeiten
+        if self.frame_count % 5 != 0:  # Take only every fifth picture
             return
 
-        # 1. Convert CompressedImage message to OpenCV image
+        # Convert CompressedImage message to OpenCV image
         cv_image = self._bridge.compressed_imgmsg_to_cv2(image_msg)
+        
+        # Create an empty mask with the same size as the image
+        mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
+        # Define polygon points for the area of interest
+        polygon = self.get_polygon()
+        # Draw the polygon on the mask
+        cv2.fillPoly(mask, [polygon], 255)
 
-        # 2. Run YOLO model on the image
+        # Run YOLO model on the image
         results = self._model(cv_image, conf=0.5, iou=0.5, agnostic_nms=True, verbose=False)
 
-        # 2. Plot results on the image
+        # Plot results on the image
         annotated_frame = results[0].plot()
 
-        # 4. Publish image mit Bounding Boxes
+        # Publish image mit Bounding Boxes
         if annotated_frame is not None:
             img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
             self.pup_image.publish(img_msg)
 
-        # Optional: nearest Duckie weiterverarbeiten, falls benötigt
-        # ...
+        # Filter detected duckies inside polygon mask and find nearest one
+        filteredResults_duckie, nearest_duckie = self.get_filteredResults_and_nearest(
+            results,
+            "duckie",
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        )
+        # Filter detected bots inside polygon mask and find nearest one
+        filteredResults_bot, nearest_bot = self.get_filteredResults_and_nearest(
+            results,
+            "bot",
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        )
+        # Filter detected free Slots inside polygon mask and find nearest one
+        filteredResults_freeSlot, nearest_freeSlot = self.get_filteredResults_and_nearest(
+            results,
+            "freeSlot",
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        )
+        # Filter detected bots inside polygon mask and find nearest one
+        filteredResults_occSlot, nearest_occSlot = self.get_filteredResults_and_nearest(
+            results,
+            "occupiedSlot",
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        )
+        
+        # === Publish ===
+        if nearest_duckie is not None:
+            x1, y1, x2, y2 = map(int, nearest_duckie.xyxy[0])
+            msg_duckieNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
+            self.pup_duckieNearestBB.publish(msg_duckieNearestBB)
+        if nearest_bot is not None:
+            x1, y1, x2, y2 = map(int, nearest_bot.xyxy[0])
+            msg_botNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
+            self.pup_botNearestBB.publish(msg_botNearestBB)
+        if nearest_freeSlot is not None:
+            x1, y1, x2, y2 = map(int, nearest_freeSlot.xyxy[0])
+            msg_parkingNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
+            self.pup_parkingBB.publish(msg_parkingNearestBB)
+        
+        
+        if self.conf['debugPrints']:
+            print('==========')
+            print('Duckies:')
+            print(' ', filteredResults_duckie)
+            print(' ', nearest_duckie)
+            print('----------')
+            print('Bots:')
+            print(' ', filteredResults_bot)
+            print(' ', nearest_bot)
+            print('----------')
+            print('free Slot:')
+            print(' ', filteredResults_freeSlot)
+            print(' ', nearest_freeSlot)
+            print('----------')
+            print('occupied Slot:')
+            print(' ', filteredResults_occSlot)
+            print(' ', nearest_occSlot)
+            
 
 
     def draw_bounding_boxes_all(self, results, img):
@@ -105,6 +174,45 @@ class DetectParkingSlotNode(DTROS):
             if self.latest_img is not None:
                 cv2.imshow(self._window, self.latest_img)
                 cv2.waitKey(1)
+                
+                
+    def get_polygon(self):
+        return np.array([
+            [self.conf['mask']['top_left_x'], self.conf['mask']['top_left_y']],
+            [self.conf['mask']['top_right_x'], self.conf['mask']['top_right_y']],
+            [self.conf['mask']['bottom_right_x'], self.conf['mask']['bottom_right_y']],
+            [self.conf['mask']['bottom_left_x'], self.conf['mask']['bottom_left_y']],
+        ], dtype=np.int32)
+        
+        
+    def get_filteredResults_and_nearest(
+            self,
+            results,
+            name,
+            mask,
+            filtered_results=[],
+            y_lowest=0
+        ):
+        myClass = self.conf['classes'][name]
+        
+        for result in results:
+            filtered = FilteredResults(names=name)
+
+            for box in result.boxes:
+                if box.cls[0] == myClass:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                    if mask[cy, cx] == 255:
+                        filtered.boxes.append(box)
+                        if y2 >= y_lowest:
+                            filtered.nearest = box
+                            y_lowest = y2
+
+            # Only add if at least one box found
+            if filtered.boxes:
+                filtered_results.append(filtered)
+
+        return filtered_results, filtered.nearest
 
 
 if __name__ == '__main__':
