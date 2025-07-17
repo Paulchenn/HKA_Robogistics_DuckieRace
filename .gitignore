@@ -1,5 +1,4 @@
-assets/yolo_bots/data/*
-assets/yolo_duckies/data/*
+
 
 docs/build
 *pyc
@@ -10,3 +9,5 @@ html/*
 
 # otherwise CI thinks index not clean
 *.resolved
+
+.vs/

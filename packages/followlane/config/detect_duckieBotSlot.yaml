@@ -1,0 +1,22 @@
+mask:
+  bottom_right_x: 640
+  bottom_right_y: 640
+  bottom_left_x: 0
+  bottom_left_y: 640
+  top_left_x: 0
+  top_left_y: 0
+  top_right_x: 640
+  top_right_y: 00
+
+classes:
+  duckie: 0
+  bot: 1
+  freeSlot: 2
+  occupiedSlot: 3
+
+min_distance_nearestDuckie: 330
+min_distance_nearestBot: 330
+
+show_image: true
+
+debugPrints: false

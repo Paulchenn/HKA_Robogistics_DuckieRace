@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: yolov8s.pt
+model: yolov8n.pt
 data: /Users/glaserpaul/Documents/010_HKA_RKIM/Robogistics/DuckieBot/HKA_Robogistics_DuckieRace/assets/yolo_bots/data/data.yaml
 epochs: 50
 time: null

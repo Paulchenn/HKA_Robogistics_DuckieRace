@@ -16,9 +16,16 @@ class BypassDuckieNode(DTROS):
     def __init__(self, node_name):
         super(BypassDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
-        self.debug = False
 
-        # Konfiguration
+        # Subscriber for nearest duckie coordinates
+        # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
+        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestBB"
+        self.sub_duckieNearestBB = rospy.Subscriber(self._duckieNearestBB_topic, Float64MultiArray, self.bypassDuckie, queue_size=1)
+        
+        # Publisher for driving commands
+        self._cmd_topic = f"/{self._vehicle_name}/detect/duckie/bypass_cmd"
+        self.pub_bypassCmd_vel = rospy.Publisher(self._cmd_topic, Twist2DStamped, queue_size=1)
+
         with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
