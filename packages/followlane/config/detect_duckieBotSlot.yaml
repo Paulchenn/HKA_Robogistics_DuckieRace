@@ -16,6 +16,9 @@ classes:
 
 min_distance_nearestDuckie: 330
 min_distance_nearestBot: 330
+nearestSlot_y2forStartParking: 430
+nearestSlot_y1tillDriveSlow: 230
+
 
 show_image: true
 
