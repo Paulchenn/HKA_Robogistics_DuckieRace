@@ -137,14 +137,36 @@ class CameraReaderNode(DTROS):
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_OPEN, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
 
-            red_pixels = cv2.countNonZero(mask_red)
-            if self.debug:
-                rospy.loginfo_throttle(1, f"Red Pixels: {red_pixels}")
-            threshold = 5000
+            # Maske wie gehabt
+            mask_red = cv2.bitwise_or(mask1, mask2)
 
-            if red_pixels > threshold:
-                self.pub_lane.publish(Float64(0))  # Optional: sofort anhalten
+            # Setze Y-Grenze (z. B. unterste 25 % oder fix)
+            y_cutoff = 420
+            threshold_pixel_count = 200
+
+            # Erzeuge Maske für unteren Bildbereich
+            mask_shape = mask_red.shape
+            lower_part_mask = np.zeros_like(mask_red)
+            lower_part_mask[y_cutoff:, :] = 255  # Nur untere Zeilen = weiß (255), Rest = 0
+
+            # Wende Maske an → nur rote Pixel unterhalb von y_cutoff zählen
+            mask_red_low = cv2.bitwise_and(mask_red, lower_part_mask)
+            red_pixels_low = cv2.countNonZero(mask_red_low)
+
+            # Debug
+            if self.debug:
+                rospy.loginfo_throttle(1, f"Rote Pixel unterhalb y={y_cutoff}: {red_pixels_low}")
+
+            # Bedingung prüfen
+            if red_pixels_low > threshold_pixel_count:
                 self.pub_redline.publish(Bool(True))
+                self.pub_lane.publish(Float64(0))  # Optionaler Sofort-Stop
+                if self.debug:
+                    rospy.loginfo(f"[RedLine] STOP – {red_pixels_low} rote Pixel unterhalb y={y_cutoff}")
+            else:
+                self.pub_redline.publish(Bool(False))
+
+
 
             polygon = self.create_polygon()
             target_x = self.compute_target_x_from_polygon(polygon, mask_white, mask_yellow, image)

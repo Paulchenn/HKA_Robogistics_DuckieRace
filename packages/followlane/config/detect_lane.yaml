@@ -19,25 +19,25 @@ white:
   hl: 0
   hh: 255
   sl: 0
-  sh: 60
-  vl: 137
+  sh: 82
+  vl: 185
   vh: 255
 gelb:
   hl: 15
   hh: 35
-  sl: 80
+  sl: 36
   sh: 255
   vl: 90
   vh: 255
 red:
   hl: 0
-  hh: 15
-  sl: 100
+  hh: 10
+  sl: 90
   sh: 255
   vl: 100
   vh: 255
 
-v_min: 0
-v_max: 0
+v_min: 0.15
+v_max: 0.2
 
 

@@ -6,7 +6,7 @@ import yaml
 from std_msgs.msg import Float64, Int32
 from duckietown_msgs.msg import Twist2DStamped
 from duckietown.dtros import DTROS, NodeType
-from switch_control_node import ControlType
+from switch_control_node import ControlState
 
 class ControlLaneNode(DTROS):
     def __init__(self, node_name):
@@ -14,7 +14,7 @@ class ControlLaneNode(DTROS):
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self.enable = False
-        self.debug = False  # Debug-Modus für Konsolenausgaben
+        self.debug = True  # Debug-Modus für Konsolenausgaben
         self.duckie_info = 0  # 0 = keine Ente, 1 = fern, 2 = nah
 
         # Konfiguration laden
@@ -57,9 +57,21 @@ class ControlLaneNode(DTROS):
         self.duckie_info = msg.data
 
     def cbVehicleStatus(self, msg: Int32):
-        self.enable = (msg.data == ControlType.Lane.value)
-        if self.debug:
-            rospy.loginfo(f"[STATUS] Steuerung aktiv: {self.enable}")
+        self.enable = (msg.data == ControlState.LANE_NORMAL.value)
+
+        if not self.enable:
+            # Sofort stoppen, wenn Steuerung deaktiviert
+            stop_twist = Twist2DStamped()
+            stop_twist.header.stamp = rospy.Time.now()
+            stop_twist.v = 0.0
+            stop_twist.omega = 0.0
+            self.pub_lane_twist.publish(stop_twist)
+            if self.debug:
+                rospy.loginfo("[STATUS] Steuerung deaktiviert → STOP-Befehl gesendet")
+        else:
+            if self.debug:
+                rospy.loginfo(f"[STATUS] Steuerung aktiv: {self.enable}")
+
 
     def cbFollowLane(self, desired_center):
         if not self.enable:
@@ -99,8 +111,8 @@ class ControlLaneNode(DTROS):
         # Befehl senden
         twist = Twist2DStamped()
         twist.header.stamp = rospy.Time.now()
-        twist.v = 0
-        twist.omega = 0
+        twist.v = v
+        twist.omega = omega
         self.pub_lane_twist.publish(twist)
 
         if self.debug:

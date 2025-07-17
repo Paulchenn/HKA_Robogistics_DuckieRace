@@ -6,8 +6,9 @@ import os
 import json
 import rospy
 from duckietown.dtros import DTROS, NodeType
-from std_msgs.msg import String, Bool
-from sensor_msgs.msg import CompressedImage  # Import für das Kamerabild
+from std_msgs.msg import String, Bool, Int32
+from sensor_msgs.msg import CompressedImage
+import time
 
 class RedLineDetector(DTROS):
     def __init__(self, node_name):
@@ -20,33 +21,40 @@ class RedLineDetector(DTROS):
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
 
-        # Publisher für die Ergebnisse
         self.pub_red_line_info = rospy.Publisher(f"/{self._vehicle_name}/red_line_info", String, queue_size=10)
+        self.pub_info = rospy.Publisher(f"/{self._vehicle_name}/abfrage_info", Int32, queue_size=10)
+        self.pub_target_x = rospy.Publisher(f"/{self._vehicle_name}/target_x", Int32, queue_size=10)
 
-        # Subscriber für das Kamerabild
-        self.sub_image = rospy.Subscriber(self._camera_topic,
-                                          CompressedImage, self.process_image, queue_size=1)
+        self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.process_image, queue_size=1)
+        self.sub_redline = rospy.Subscriber(self._redLine_topic, Bool, self.process_stop_line, queue_size=1)
 
-        # Subscriber für die Stop-Line-Erkennung
-        self.sub_redline = rospy.Subscriber(self._redLine_topic,
-                                            Bool, self.process_stop_line, queue_size=1)
-        
         self.direction_already_published = False
+        self.stop_line_detected = False
+        self.waiting_at_line = False
+        self.wait_start_time = None
+        self.abbiegephase_gestartet = False
+        self.abgeschlossen = False
+        self.chosen_direction = None
 
-        # Debug-Modus aktivieren über ROS-Parameter (z. B. in launch file oder param server)
         self.debug = True
         if self.debug:
             rospy.loginfo("[RedLineDetector] Debug-Modus aktiviert")
 
+    def process_stop_line(self, msg):
+        if msg.data:
+            if self.debug:
+                rospy.loginfo_throttle(5, "Stoplinie erkannt")
+            if not self.abbiegephase_gestartet and not self.waiting_at_line:
+                self.stop_line_detected = True
+                self.waiting_at_line = True
+                self.wait_start_time = rospy.get_time()
+
     def process_image(self, msg):
-        # Bild aus der Message dekodieren
         np_arr = np.frombuffer(msg.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        rd = self.conf['red']  # rot = rotHSV-Bereich
-
+        rd = self.conf['red']
         lower_red1 = np.array([rd['hl'], rd['sl'], rd['vl']])
         upper_red1 = np.array([rd['hh'], rd['sh'], rd['vh']])
         lower_red2 = np.array([170, rd['sl'], rd['vl']])
@@ -59,37 +67,12 @@ class RedLineDetector(DTROS):
         contours_red, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         min_area = 150
         filtered_contours_red = [cnt for cnt in contours_red if cv2.contourArea(cnt) > min_area]
-        turning_options = len(filtered_contours_red) - 1
-
-        for cnt in filtered_contours_red:
-            x, y, w, h = cv2.boundingRect(cnt)
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 2)
-
-        x_red = None
-        if contours_red:
-            largest_contour = max(contours_red, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(largest_contour)
-            x_red = x + w // 2
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 2)
 
         height, width = frame.shape[:2]
-        half_height, half_width = height // 2, width // 2
-        quarter_height, fifth_width = height // 4, width // 5
-
+        half_width = width // 2
+        fifth_width = width // 5
+        quarter_height = height // 4
         y_horizontal = 3 * quarter_height
-        cv2.line(frame, (0, y_horizontal), (width, y_horizontal), (0, 255, 0), 2)
-
-        left_intersection = (0, y_horizontal)
-        right_intersection = (width, y_horizontal)
-
-        if self.debug:
-            rospy.loginfo_throttle(2, f"Schnittpunkte der horizontalen Linie: links={left_intersection}, rechts={right_intersection}")
-
-        cv2.circle(frame, left_intersection, 5, (255, 0, 0), -1)
-        cv2.circle(frame, right_intersection, 5, (255, 0, 0), -1)
-
-        cv2.line(frame, (fifth_width, 0), (fifth_width, height), (0, 255, 0), 2)
-        cv2.line(frame, (half_width, 0), (half_width, height), (0, 255, 0), 2)
 
         turn_left = turn_straight = turn_right = False
         options = []
@@ -98,52 +81,71 @@ class RedLineDetector(DTROS):
             x, y, w, h = cv2.boundingRect(contour)
             center_x = x + w // 2
             center_y = y + h // 2
-            cv2.circle(frame, (center_x, center_y), radius=1, color=(200, 255, 100), thickness=-1)
 
-            if center_y < 3 * quarter_height:
+            if center_y < y_horizontal:
                 if center_x <= fifth_width:
                     turn_left = True
-                    if "links" not in options:
-                        options.append("links")
-                if fifth_width < center_x <= half_width:
+                    options.append("links")
+                elif center_x <= half_width:
                     turn_straight = True
-                    if "geradeaus" not in options:
-                        options.append("geradeaus")
-                if center_x > half_width:
+                    options.append("geradeaus")
+                else:
                     turn_right = True
-                    if "rechts" not in options:
-                        options.append("rechts")
+                    options.append("rechts")
 
-        if self.debug:
-            rospy.loginfo_throttle(1, f"Links:{turn_left}, Mitte:{turn_straight}, Rechts:{turn_right}")
+        if options and not self.direction_already_published:
+            self.chosen_direction = random.choice(options)
+            data = {"richtung": self.chosen_direction}
+            msg_out = String()
+            msg_out.data = json.dumps(data)
+            self.pub_red_line_info.publish(msg_out)
+            self.direction_already_published = True
+            rospy.loginfo("Richtung gewählt und gesendet: %s", self.chosen_direction)
 
-        if options:
-            chosen_direction = random.choice(options)
-            if self.debug:
-                rospy.loginfo_throttle(2, f"Zufällig gewählte Richtung: {chosen_direction}")
-            data = {"richtung": chosen_direction, "left": left_intersection, "right": right_intersection}
-            msg = String()
-            msg.data = json.dumps(data)
+        # === Kontrolllogik für Abbiegevorgang ===
 
-            if not self.direction_already_published:
-                self.pub_red_line_info.publish(msg)
-                self.direction_already_published = True
+        current_time = rospy.get_time()
+
+        if self.waiting_at_line:
+            # Während wir "stehen" (info=3)
+            if current_time - self.wait_start_time < 2.0:
+                self.pub_info.publish(Int32(3))  # publish info=3 kontinuierlich
+                return
+            else:
+                self.waiting_at_line = False
+                self.abbiegephase_gestartet = True
+                rospy.loginfo("Abbiegevorgang wird gestartet")
+
+        if self.abbiegephase_gestartet and not self.abgeschlossen:
+            self.pub_info.publish(Int32(4))  # publish info=4 während Abbiegen
+
+            # Berechne target_x dynamisch aus dem größten roten Bereich (z. B. Mittelpunkt)
+            if contours_red:
+                largest_contour = max(contours_red, key=cv2.contourArea)
+                x, y, w, h = cv2.boundingRect(largest_contour)
+                target_x = x + w // 2
+                self.pub_target_x.publish(Int32(target_x))
                 if self.debug:
-                    rospy.loginfo("Hier wird jetzt 1x die Richtung gepublished")
+                    rospy.loginfo_throttle(1, f"target_x: {target_x}")
+            else:
+                if self.debug:
+                    rospy.logwarn_throttle(2, "Keine rote Linie erkannt während Abbiegen")
 
-        if self.debug:
-            num_red_lines = len(contours_red)
-            num_filtered_red_lines = len(filtered_contours_red)
-            red_pixels = cv2.countNonZero(mask_red)
-            rospy.loginfo_throttle(2, f"Gefundene Linien: {num_red_lines}, Nach Filter: {num_filtered_red_lines}, Rote Pixel: {red_pixels}")
+            # TODO: Ersetze diese Dummy-Bedingung durch echte Erkennung ob fertig
+            # Beispiel: Wenn keine roten Linien mehr erkannt oder bestimmte Zeit vergangen ist
+            if len(filtered_contours_red) == 0:
+                rospy.loginfo("Abbiegevorgang abgeschlossen!")
+                self.abbiegephase_gestartet = False
+                self.abgeschlossen = True
+                self.pub_info.publish(Int32(0))  # signalisiere Ende des Abbiegevorgangs
 
+        # === Debug Visualisierung ===
         if self.debug:
-            cv2.imshow("Rote_Linien_erkennen", frame)
+            for cnt in filtered_contours_red:
+                x, y, w, h = cv2.boundingRect(cnt)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+            cv2.imshow("Rote Linien", frame)
             cv2.waitKey(1)
-
-    def process_stop_line(self, msg):
-        if msg.data and self.debug:
-            rospy.loginfo_throttle(5, "Stoplinie erkannt, Verarbeitung läuft...")
 
 if __name__ == "__main__":
     node = RedLineDetector(node_name="red_line_detector")

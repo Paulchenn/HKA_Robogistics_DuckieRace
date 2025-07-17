@@ -31,11 +31,9 @@ dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/camera_reader_node.py" &
 
 dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/control_lane_node.py" &
 
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/detect_duckie_node.py" &
+dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/detect_object_node.py" &
 
 dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/bypass_duckie_node.py" &
-
-dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/display_detectedDuckie_node.py" &
 
 dt-exec python3 "$DT_REPO_PATH/packages/followlane/src/intersection_handling_node.py" &
 
