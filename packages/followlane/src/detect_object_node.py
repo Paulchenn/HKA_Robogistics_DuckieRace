@@ -77,7 +77,7 @@ class DetectParkingSlotNode(DTROS):
         cv2.fillPoly(mask, [polygon], 255)
 
         # Run YOLO model on the image
-        results = self._model(cv_image, conf=0.5, iou=0.5, agnostic_nms=True, verbose=False)
+        results = self._model(cv_image, conf=0.65, iou=0.5, agnostic_nms=True, verbose=False)
 
         # Plot results on the image
         annotated_frame = results[0].plot()
@@ -152,28 +152,6 @@ class DetectParkingSlotNode(DTROS):
             print('occupied Slot:')
             print(' ', filteredResults_occSlot)
             print(' ', nearest_occSlot)
-            
-
-
-    def draw_bounding_boxes_all(self, results, img):
-        for result in results:
-            for box in result.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cls_id = int(box.cls[0]) if hasattr(box, 'cls') else 0
-                label = result.names.get(cls_id, "object")
-
-                # Bounding Box zeichnen (blau)
-                cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                # Label über der Box zeichnen
-                cv2.putText(img, label, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        return img
-
-    def display_loop(self):
-        while True:
-            if self.latest_img is not None:
-                cv2.imshow(self._window, self.latest_img)
-                cv2.waitKey(1)
                 
                 
     def get_polygon(self):

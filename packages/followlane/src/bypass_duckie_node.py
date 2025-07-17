@@ -23,7 +23,7 @@ class BypassDuckieNode(DTROS):
 
         # Subscriber for nearest duckie coordinates
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
-        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/duckie/nearestBB"
+        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestBB"
         self.sub_duckieNearestBB = rospy.Subscriber(self._duckieNearestBB_topic, Float64MultiArray, self.bypassDuckie, queue_size=1)
         
         # Publisher for driving commands

@@ -28,7 +28,7 @@ class DisplayYoloResultNode(DTROS):
         self._yolo_topic = f"/{self._vehicle_name}/detect/object/image"
         self.sub_image = rospy.Subscriber(self._yolo_topic, Image, self.cbShowImage, queue_size=1)
 
-        with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
+        with open('packages/followlane/config/detect_duckieBotSlot.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
         self._bridge = CvBridge()
