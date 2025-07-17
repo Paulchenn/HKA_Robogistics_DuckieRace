@@ -28,7 +28,7 @@ class DetectParkingSlotNode(DTROS):
         super(DetectParkingSlotNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
         
-        self._model = YOLO("packages/followlane/assets/model_detectDuckieBotSlot.pt")  # YOLO model path
+        self._model = YOLO("packages/followlane/assets/model_detectDuckieBotSlot_V3.pt")  # YOLO model path
 
         # Subscriber for camera images
         # The camera topic is constructed using the vehicle name from the environment variable
