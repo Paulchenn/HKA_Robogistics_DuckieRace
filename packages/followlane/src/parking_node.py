@@ -104,3 +104,8 @@ class ParkingNode(DTROS):
         with self.transition_lock:
             self.state = "IDLE"
             self.publish_state(0)
+
+
+if __name__ == '__main__':
+    node = ParkingNode(node_name='parking_node')
+    rospy.spin()
