@@ -10,6 +10,7 @@ from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
 from std_msgs.msg import Float64, Float64MultiArray, Int32
 from sensor_msgs.msg import CompressedImage
+from duckietown_msgs.msg import Twist2DStamped
 
 
 class BypassDuckieNode(DTROS):
@@ -17,6 +18,7 @@ class BypassDuckieNode(DTROS):
         super(BypassDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
 
+        self.debug = False  # oder False, je nachdem
         # Subscriber for nearest duckie coordinates
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
         self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestBB"

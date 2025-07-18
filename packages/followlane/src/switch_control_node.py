@@ -22,8 +22,8 @@ class SwitchControlNode(DTROS):
         self._state = ControlState.LANE_NORMAL
 
         # Debug
-        self.debug = True
-        self.debug_run = True
+        self.debug = False
+        self.debug_run = False
 
         # Werte aus den anderen Nodes
         self.lane_x = None
@@ -32,6 +32,7 @@ class SwitchControlNode(DTROS):
 
         self.duckie_info = 0
         self.intersection_info = 0
+        self.parking_info = 0   
 
         # Publisher
         self.pub_selected_x = rospy.Publisher(
@@ -138,7 +139,7 @@ class SwitchControlNode(DTROS):
                 if self.debug_run:
                     rospy.logwarn("[RUN] PARKING – uebergebe Kontrolle an parking-node")
 
-            elif self.duckie_info == 1 or self.parkign_info == 1:
+            elif self.duckie_info == 1 or self.parking_info == 1:
                 self._state = ControlState.LANE_SLOW
                 if self.lane_x is not None:
                     selected_x = self.lane_x

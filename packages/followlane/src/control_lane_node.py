@@ -61,11 +61,11 @@ class ControlLaneNode(DTROS):
         self.duckie_info = msg.data
 
     def cbVehicleStatus(self, msg: Int32):
-        self.enable = (msg.data == ControlState.LANE_NORMAL.value)
+        self.enable = msg.data in [ControlState.LANE_NORMAL.value, ControlState.INTERSECTION.value]
 
         if not self.enable:
             if not self.stop_sent:
-                # Nur wenn noch nicht 5 STOPs gesendet wurden
+                # Nur wenn noch nicht 3 STOPs gesendet wurden
                 stop_twist = Twist2DStamped()
                 stop_twist.header.stamp = rospy.Time.now()
                 stop_twist.v = 0.0
@@ -74,13 +74,13 @@ class ControlLaneNode(DTROS):
                 self.stop_cmd_count += 1
 
                 if self.debug:
-                    rospy.loginfo(f"[STATUS] STOP-Befehl {self.stop_cmd_count}/5 gesendet")
+                    rospy.loginfo(f"[STATUS] STOP-Befehl {self.stop_cmd_count}/3 gesendet")
 
-                if self.stop_cmd_count >= 5:
+                if self.stop_cmd_count >= 3:
                     self.stop_sent = True  # Danach keine weiteren STOP-Befehle
             else:
                 if self.debug:
-                    rospy.loginfo_throttle(5, "[STATUS] STOP bereits gesendet, keine weiteren Befehle")
+                    rospy.loginfo_throttle(3, "[STATUS] STOP bereits gesendet, keine weiteren Befehle")
         else:
             if self.debug:
                 rospy.loginfo(f"[STATUS] Steuerung aktiv: {self.enable}")
@@ -132,8 +132,8 @@ class ControlLaneNode(DTROS):
         # Befehl senden
         twist = Twist2DStamped()
         twist.header.stamp = rospy.Time.now()
-        twist.v = 0
-        twist.omega = 0
+        twist.v = v
+        twist.omega = omega
         self.pub_lane_twist.publish(twist)
 
         if self.debug:

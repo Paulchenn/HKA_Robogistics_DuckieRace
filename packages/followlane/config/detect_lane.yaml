@@ -37,7 +37,7 @@ red:
   vl: 100
   vh: 255
 
-v_min: 0.15
+v_min: 0.2
 v_max: 0.2
 
 
