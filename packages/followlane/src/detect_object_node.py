@@ -82,7 +82,7 @@ class DetectParkingSlotNode(DTROS):
         annotated_frame = results[0].plot()
 
         # Publish image mit Bounding Boxes
-        if annotated_frame is not None:
+        if False: #annotated_frame is not None:
             img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
             self.pup_image.publish(img_msg)
 
@@ -118,6 +118,76 @@ class DetectParkingSlotNode(DTROS):
             filtered_results=[],
             y_lowest=0
         )
+
+        # === Slot Evaluation with IoU (ALL bots & duckies) ===
+        def compute_max_iou(slot_box, object_list):
+            """Compute maximum IoU between slot_box and all objects in list"""
+            max_iou = 0.0
+            for obj in object_list:
+                obj_box = [int(x) for x in obj.boxes[0].xyxy[0]]
+                iou = self.compute_iou(slot_box, obj_box)
+                max_iou = max(max_iou, iou)
+            return max_iou
+
+        best_slot_box = None
+        best_slot_type = None  # "freeSlot" or "occupiedSlot"
+        best_iou = 0.0
+
+        iou_threshold = self.conf["iou_thresh"]  # Tunable
+
+        # Collect all detected slot boxes (free + occupied)
+        all_slots = []
+        if nearest_freeSlot:
+            all_slots.append(("freeSlot", nearest_freeSlot))
+        if nearest_occSlot:
+            all_slots.append(("occupiedSlot", nearest_occSlot))
+
+        # Prepare Duckie- und Bot-Listen for IoU-Calc
+        duckie_objects = filteredResults_duckie
+        bot_objects = filteredResults_bot
+
+        for slot_type, slot_box in all_slots:
+            box_slot = [int(x) for x in slot_box.xyxy[0]]
+
+            if not duckie_objects==None:
+                iou_duckie = compute_max_iou(box_slot, duckie_objects)
+            if not duckie_objects==None:
+                iou_bot = compute_max_iou(box_slot, bot_objects)
+            max_iou = max(iou_duckie, iou_bot)
+
+            if max_iou > best_iou:
+                best_iou = max_iou
+                best_slot_box = box_slot
+            elif best_slot_box is None:
+                best_slot_box = box_slot
+            # best_slot_type = slot_type
+
+        if self.conf["debugPrints_detectObject"]:
+            rospy.loginfo(f"[OBJECT DETECTION] {best_iou}")
+
+        if best_slot_box is not None:
+            is_occupied = best_iou > iou_threshold
+
+            if self.conf["debugPrints_detectObject"]:
+                rospy.loginfo(f"[OBJECT DETECTION] {best_slot_box}")
+
+            # Publish slot position (always)
+            if not is_occupied:
+                msg_parkingNearestBB = Float64MultiArray(data=best_slot_box)
+                self.pup_parkingBB.publish(msg_parkingNearestBB)
+
+            color = (0, 0, 255) if is_occupied else (0, 255, 0)
+            label = 'Slot: OCCUPIED' if is_occupied else 'Slot: FREE'
+            cv2.rectangle(annotated_frame, (best_slot_box[0], best_slot_box[1]),
+                          (best_slot_box[2], best_slot_box[3]),
+                          color, 2)
+            cv2.putText(annotated_frame, label, (best_slot_box[0], best_slot_box[1] - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+        # Finales Bild mit Slot-Zustand senden
+        my_img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
+        self.pup_image.publish(my_img_msg)
+
         
         # === Publish ===
         if nearest_duckie is not None:
@@ -128,13 +198,8 @@ class DetectParkingSlotNode(DTROS):
             x1, y1, x2, y2 = map(int, nearest_bot.xyxy[0])
             msg_botNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
             self.pup_botNearestBB.publish(msg_botNearestBB)
-        if nearest_freeSlot is not None:
-            x1, y1, x2, y2 = map(int, nearest_freeSlot.xyxy[0])
-            msg_parkingNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
-            self.pup_parkingBB.publish(msg_parkingNearestBB)
         
-        
-        if self.conf['debugPrints']:
+        if False: #self.conf['debugPrints_detectObject']:
             print('==========')
             print('Duckies:')
             print(' ', filteredResults_duckie)
@@ -190,6 +255,23 @@ class DetectParkingSlotNode(DTROS):
                 filtered_results.append(filtered)
 
         return filtered_results, filtered.nearest
+    
+
+    def compute_iou(self, box1, box2):
+        """Compute IoU between two bounding boxes (format: [x1, y1, x2, y2])"""
+        x1 = max(box1[0], box2[0])
+        y1 = max(box1[1], box2[1])
+        x2 = min(box1[2], box2[2])
+        y2 = min(box1[3], box2[3])
+
+        inter_area = max(0, x2 - x1) * max(0, y2 - y1)
+        box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+        box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+        union_area = box1_area + box2_area - inter_area
+
+        if union_area == 0:
+            return 0.0
+        return inter_area / union_area
 
 
 if __name__ == '__main__':
