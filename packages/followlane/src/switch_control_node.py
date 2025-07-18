@@ -7,11 +7,12 @@ from std_msgs.msg import Float64, Int32
 from duckietown.dtros import DTROS, NodeType
 
 class ControlState(Enum):
-    STOP = 0
-    INTERSECTION = 1
-    OBSTACLE = 2
-    LANE_SLOW = 3
-    LANE_NORMAL = 4
+    STOP            = 0
+    INTERSECTION    = 1
+    OBSTACLE        = 2
+    PARKING         = 3
+    LANE_SLOW       = 4
+    LANE_NORMAL     = 5
 
 class SwitchControlNode(DTROS):
     def __init__(self, node_name):
@@ -60,6 +61,11 @@ class SwitchControlNode(DTROS):
             f"/{self._vehicle_name}/abfrage_info", Int32, self.cbIntersectionInfo, queue_size=1
         )
 
+        # Subscriber: Parking Info (0 = nichts, 1 = langsam, 5 = parken (in parking_node))
+        rospy.Subscriber(
+            f"/{self._vehicle_name}/detect/object/slow4park", Int32, self.cbParkingInfo, queue_size=1
+        )
+
         # Subscriber: Intersection Target X
         rospy.Subscriber(
             f"/{self._vehicle_name}/target_x", Int32, self.cbIntersectionX, queue_size=1
@@ -92,6 +98,11 @@ class SwitchControlNode(DTROS):
         if self.debug:
             rospy.loginfo(f"[SWITCH] Intersection Target X: {self.intersection_x}")
 
+    def cbParkingInfo(self, msg: Int32):
+        self.parking_info = msg.data
+        if self.debug:
+            rospy.loginfo(f"[SWITCH] Parking Info: {self.parking_info}")
+
     def fnShutDown(self):
         rospy.loginfo("[SWITCH] Node wird heruntergefahren.")
 
@@ -121,7 +132,13 @@ class SwitchControlNode(DTROS):
                     if self.debug_run:
                         rospy.loginfo("[RUN] OBSTACLE – verwende Bypass-X")
 
-            elif self.duckie_info == 1:
+            elif self.parking_info == 5:
+                self._state = ControlState.PARKING
+                selected_x = None
+                if self.debug_run:
+                    rospy.logwarn("[RUN] PARKING – uebergebe Kontrolle an parking-node")
+
+            elif self.duckie_info == 1 or self.parkign_info == 1:
                 self._state = ControlState.LANE_SLOW
                 if self.lane_x is not None:
                     selected_x = self.lane_x
