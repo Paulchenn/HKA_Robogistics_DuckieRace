@@ -9,7 +9,6 @@ import threading
 
 from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
-from duckietown_msgs.msg import Twist2DStamped
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Float64, Float64MultiArray
 from ultralytics import YOLO
