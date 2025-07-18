@@ -23,7 +23,7 @@ class SwitchControlNode(DTROS):
 
         # Debug
         self.debug = False
-        self.debug_run = False
+        self.debug_run = True
 
         # Werte aus den anderen Nodes
         self.lane_x = None
@@ -32,7 +32,7 @@ class SwitchControlNode(DTROS):
 
         self.duckie_info = 0
         self.intersection_info = 0
-        self.parking_info = 0   
+        self.parking_info = 0
 
         # Publisher
         self.pub_selected_x = rospy.Publisher(
