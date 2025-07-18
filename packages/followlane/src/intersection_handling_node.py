@@ -36,6 +36,11 @@ class RedLineDetector(DTROS):
         self.abgeschlossen = False
         self.chosen_direction = None
 
+        # Initialisiere Variablen für Abbiegevorgang
+        self.no_red_frame_count = 0
+        self.no_red_frame_threshold = 3
+
+
         self.debug = True
         if self.debug:
             rospy.loginfo("[RedLineDetector] Debug-Modus aktiviert")
@@ -94,7 +99,8 @@ class RedLineDetector(DTROS):
                     options.append("rechts")
 
         if options and not self.direction_already_published:
-            self.chosen_direction = random.choice(options)
+            self.chosen_direction = "links"             
+            #random.choice(options)
             data = {"richtung": self.chosen_direction}
             msg_out = String()
             msg_out.data = json.dumps(data)
@@ -117,27 +123,70 @@ class RedLineDetector(DTROS):
                 rospy.loginfo("Abbiegevorgang wird gestartet")
 
         if self.abbiegephase_gestartet and not self.abgeschlossen:
-            self.pub_info.publish(Int32(4))  # publish info=4 während Abbiegen
+            self.pub_info.publish(Int32(4))  # während Abbiegen
 
-            # Berechne target_x dynamisch aus dem größten roten Bereich (z. B. Mittelpunkt)
-            if contours_red:
-                largest_contour = max(contours_red, key=cv2.contourArea)
-                x, y, w, h = cv2.boundingRect(largest_contour)
-                target_x = x + w // 2
+            if self.chosen_direction == "links":
+                rospy.loginfo_throttle(1, "[Abbiegen] Linksabbiegen aktiv")
+
+                if filtered_contours_red:
+                    # Linkeste Box finden (kleinster x-Wert)
+                    leftmost_contour = min(filtered_contours_red, key=lambda cnt: cv2.boundingRect(cnt)[0])
+                    x, y, w, h = cv2.boundingRect(leftmost_contour)
+                    target_x = x + w  # rechte obere Ecke (x + Breite)
+
+                    if self.debug:
+                        cv2.circle(frame, (target_x, y), 6, (255, 0, 255), -1)
+                        cv2.putText(frame, "Target (links)", (target_x - 30, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+
+                    self.no_red_frame_count = 0  # Reset-Zähler
+                else:
+                    rospy.logwarn_throttle(2, "[Abbiegen] Keine rote Kontur für Linksabbiegen gefunden")
+                    target_x = 200  # fallback
+                    self.no_red_frame_count += 1
+
                 self.pub_target_x.publish(Int32(target_x))
-                if self.debug:
-                    rospy.loginfo_throttle(1, f"target_x: {target_x}")
-            else:
-                if self.debug:
-                    rospy.logwarn_throttle(2, "Keine rote Linie erkannt während Abbiegen")
 
-            # TODO: Ersetze diese Dummy-Bedingung durch echte Erkennung ob fertig
-            # Beispiel: Wenn keine roten Linien mehr erkannt oder bestimmte Zeit vergangen ist
-            if len(filtered_contours_red) == 0:
-                rospy.loginfo("Abbiegevorgang abgeschlossen!")
+            elif self.chosen_direction == "geradeaus":
+                rospy.loginfo_throttle(1, "[Abbiegen] Geradeaus aktiv")
+
+                # TODO: Berechne target_x für Geradeausfahren
+                target_x = 320  # Platzhalter
+
+                if filtered_contours_red:
+                    self.no_red_frame_count = 0
+                else:
+                    rospy.logwarn_throttle(2, "[Abbiegen] Keine rote Kontur für Geradeausfahren gefunden")
+                    self.no_red_frame_count += 1
+
+                self.pub_target_x.publish(Int32(target_x))
+
+            elif self.chosen_direction == "rechts":
+                rospy.loginfo_throttle(1, "[Abbiegen] Rechtsabbiegen aktiv")
+
+                # TODO: Berechne target_x für Rechtsabbiegen
+                target_x = 440  # Platzhalter
+
+                if filtered_contours_red:
+                    self.no_red_frame_count = 0
+                else:
+                    rospy.logwarn_throttle(2, "[Abbiegen] Keine rote Kontur für Rechtsabbiegen gefunden")
+                    self.no_red_frame_count += 1
+
+                self.pub_target_x.publish(Int32(target_x))
+
+            else:
+                rospy.logwarn_throttle(2, f"[Abbiegen] Unbekannte Richtung: {self.chosen_direction}")
+                self.no_red_frame_count += 1
+
+            # Abbruchbedingung – stabil durch 3 leere Frames
+            if self.no_red_frame_count >= 3:
+                rospy.loginfo("[Abbiegen] Keine roten Linien in 3 aufeinanderfolgenden Frames – Abbiegevorgang abgeschlossen")
                 self.abbiegephase_gestartet = False
                 self.abgeschlossen = True
-                self.pub_info.publish(Int32(0))  # signalisiere Ende des Abbiegevorgangs
+                self.pub_info.publish(Int32(0))
+
+
 
         # === Debug Visualisierung ===
         if self.debug:

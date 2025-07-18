@@ -19,8 +19,8 @@ white:
   hl: 0
   hh: 255
   sl: 0
-  sh: 82
-  vl: 185
+  sh: 60
+  vl: 150
   vh: 255
 gelb:
   hl: 15

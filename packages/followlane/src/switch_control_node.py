@@ -21,8 +21,8 @@ class SwitchControlNode(DTROS):
         self._state = ControlState.LANE_NORMAL
 
         # Debug
-        self.debug = False
-        self.debug_run = False
+        self.debug = True
+        self.debug_run = True
 
         # Werte aus den anderen Nodes
         self.lane_x = None

@@ -14,7 +14,7 @@ class ControlLaneNode(DTROS):
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self.enable = False
-        self.debug = True  # Debug-Modus für Konsolenausgaben
+        self.debug = False  # Debug-Modus für Konsolenausgaben
         self.duckie_info = 0  # 0 = keine Ente, 1 = fern, 2 = nah
 
         # Konfiguration laden
@@ -42,6 +42,10 @@ class ControlLaneNode(DTROS):
             f"/{self._vehicle_name}/switch/control", Int32, self.cbVehicleStatus, queue_size=1
         )
 
+
+        self.stop_cmd_count = 0
+        self.stop_sent = False
+
         # PID Parameter
         self.kp = 10
         self.ki = 0.1
@@ -60,20 +64,37 @@ class ControlLaneNode(DTROS):
         self.enable = (msg.data == ControlState.LANE_NORMAL.value)
 
         if not self.enable:
-            # Sofort stoppen, wenn Steuerung deaktiviert
-            stop_twist = Twist2DStamped()
-            stop_twist.header.stamp = rospy.Time.now()
-            stop_twist.v = 0.0
-            stop_twist.omega = 0.0
-            self.pub_lane_twist.publish(stop_twist)
-            if self.debug:
-                rospy.loginfo("[STATUS] Steuerung deaktiviert → STOP-Befehl gesendet")
+            if not self.stop_sent:
+                # Nur wenn noch nicht 5 STOPs gesendet wurden
+                stop_twist = Twist2DStamped()
+                stop_twist.header.stamp = rospy.Time.now()
+                stop_twist.v = 0.0
+                stop_twist.omega = 0.0
+                self.pub_lane_twist.publish(stop_twist)
+                self.stop_cmd_count += 1
+
+                if self.debug:
+                    rospy.loginfo(f"[STATUS] STOP-Befehl {self.stop_cmd_count}/5 gesendet")
+
+                if self.stop_cmd_count >= 5:
+                    self.stop_sent = True  # Danach keine weiteren STOP-Befehle
+            else:
+                if self.debug:
+                    rospy.loginfo_throttle(5, "[STATUS] STOP bereits gesendet, keine weiteren Befehle")
         else:
             if self.debug:
                 rospy.loginfo(f"[STATUS] Steuerung aktiv: {self.enable}")
 
 
     def cbFollowLane(self, desired_center):
+
+        # Reset wenn Ziel vorhanden und Steuerung aktiv
+        if self.stop_sent:
+            self.stop_cmd_count = 0
+            self.stop_sent = False
+            if self.debug:
+                rospy.loginfo("[STATUS] Fahrt aufgenommen → STOP-Logik zurückgesetzt")
+
         if not self.enable:
             if self.debug:
                 rospy.loginfo("[CONTROL] Regelung deaktiviert – kein Kommando")
@@ -111,8 +132,8 @@ class ControlLaneNode(DTROS):
         # Befehl senden
         twist = Twist2DStamped()
         twist.header.stamp = rospy.Time.now()
-        twist.v = v
-        twist.omega = omega
+        twist.v = 0
+        twist.omega = 0
         self.pub_lane_twist.publish(twist)
 
         if self.debug:
