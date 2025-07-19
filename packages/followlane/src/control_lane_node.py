@@ -42,6 +42,7 @@ class ControlLaneNode(DTROS):
             f"/{self._vehicle_name}/switch/control", Int32, self.cbVehicleStatus, queue_size=1
         )
 
+        self.vehicle_status = 0  # Initialer Fahrzeugstatus
 
         self.stop_cmd_count = 0
         self.stop_sent = False
@@ -61,7 +62,9 @@ class ControlLaneNode(DTROS):
         self.duckie_info = msg.data
 
     def cbVehicleStatus(self, msg: Int32):
-        self.enable = msg.data in [ControlState.LANE_NORMAL.value, ControlState.INTERSECTION.value]
+
+        self.vehicle_status = msg.data
+        self.enable = msg.data in [ControlState.LANE_NORMAL.value, ControlState.INTERSECTION.value, ControlState.LANE_SLOW.value,]
 
         if not self.enable:
             if not self.stop_sent:
@@ -120,14 +123,15 @@ class ControlLaneNode(DTROS):
         omega = self.kp * error + self.ki * self.integral + self.kd * derivative
         omega = max(min(omega, 5.0), -5.0)
 
-        # Geschwindigkeitsanpassung basierend auf Duckie-Info
-        if self.duckie_info == 2:
-            v = self.v_min  # Duckie Ausweichmanöver
-        elif self.duckie_info == 1:
-            v = self.v_min  # Duckie sehr nah
+        # Geschwindigkeitsanpassung basierend auf Fahrzeugstatus und Duckie-Info
+        if self.vehicle_status in [1, 2, 4]:
+            v = self.v_min
+            if self.debug:
+                rospy.loginfo(f"[Geschwindigkeit] Fahrzeugstatus {self.vehicle_status} → v_min gesetzt")
         else:
             error_abs = min(abs(error), 1.0)
             v = self.v_max - (self.v_max - self.v_min) * error_abs
+
 
         # Befehl senden
         twist = Twist2DStamped()

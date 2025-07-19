@@ -57,7 +57,7 @@ class SwitchControlNode(DTROS):
             f"/{self._vehicle_name}/detect/duckie/info", Int32, self.cbDuckieInfo, queue_size=1
         )
 
-        # Subscriber: Intersection Info (0 = nichts, 3 = STOP, 4 = ABBIEGEN)
+        # Subscriber: Intersection Info (0 = nichts, 1 = langsam, 3 = STOP, 4 = ABBIEGEN)
         rospy.Subscriber(
             f"/{self._vehicle_name}/abfrage_info", Int32, self.cbIntersectionInfo, queue_size=1
         )
@@ -139,7 +139,7 @@ class SwitchControlNode(DTROS):
                 if self.debug_run:
                     rospy.logwarn("[RUN] PARKING – uebergebe Kontrolle an parking-node")
 
-            elif self.duckie_info == 1 or self.parking_info == 1:
+            elif self.duckie_info == 1 or self.parking_info == 1 or self.intersection_info == 1:
                 self._state = ControlState.LANE_SLOW
                 if self.lane_x is not None:
                     selected_x = self.lane_x
