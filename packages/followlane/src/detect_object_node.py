@@ -27,6 +27,8 @@ class DetectParkingSlotNode(DTROS):
         super(DetectParkingSlotNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
         
+        self.frame_count = 0
+        
         self._model = YOLO("packages/followlane/assets/model_detectDuckieBotSlot_V3.pt")  # YOLO model path
 
         # Subscriber for camera images
@@ -60,7 +62,6 @@ class DetectParkingSlotNode(DTROS):
             self.conf = yaml.safe_load(f)
 
         self._bridge = CvBridge()
-        self.frame_count = 0
         
 
     def cbDetectObjects(self, image_msg):
