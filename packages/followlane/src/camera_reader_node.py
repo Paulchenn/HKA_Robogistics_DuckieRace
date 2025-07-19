@@ -141,7 +141,7 @@ class CameraReaderNode(DTROS):
             mask_red = cv2.bitwise_or(mask1, mask2)
 
             # Setze Y-Grenze (z. B. unterste 25 % oder fix)
-            y_cutoff = 420
+            y_cutoff = 400
             threshold_pixel_count = 200
 
             # Erzeuge Maske für unteren Bildbereich

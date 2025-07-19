@@ -6,6 +6,7 @@ import numpy as np
 import os
 import json
 import rospy
+import random
 from duckietown.dtros import DTROS, NodeType
 from std_msgs.msg import String, Bool, Int32, Float64
 from sensor_msgs.msg import CompressedImage
@@ -42,7 +43,7 @@ class RedLineDetector(DTROS):
         self.abbiege_start_time = None
         self.last_turn_completed_time = None
 
-        self.debug = True
+        self.debug = False
         if self.debug:
             rospy.loginfo("[RedLineDetector] Debug-Modus aktiviert")
 
@@ -53,8 +54,8 @@ class RedLineDetector(DTROS):
 
     def cb_left_x(self, msg):
         self.left_x_value = msg.data
-        if self.debug:
-            rospy.loginfo(f"[Abbiegen] Empfange weißen Left-X: {self.left_x_value}")
+        # if self.debug:
+        #     rospy.loginfo(f"[Abbiegen] Empfange weißen Left-X: {self.left_x_value}")
 
     def process_stop_line(self, msg):
         current_time = rospy.get_time()
@@ -119,7 +120,8 @@ class RedLineDetector(DTROS):
                         options.append("rechts")
 
             if options and not self.direction_already_published:
-                self.chosen_direction = "geradeaus"
+                rospy.loginfo(f"[Abbiegen] Mögliche Richtungen erkannt: {options}")
+                self.chosen_direction = random.choice(options)
                 msg_out = String()
                 msg_out.data = json.dumps({"richtung": self.chosen_direction})
                 self.pub_red_line_info.publish(msg_out)
@@ -130,7 +132,8 @@ class RedLineDetector(DTROS):
             if self.waiting_at_line:
                 if current_time - self.wait_start_time < 2.0:
                     self.pub_info.publish(Int32(3))
-                    return
+                    #rate.sleep()
+                    continue
                 else:
                     self.waiting_at_line = False
                     self.abbiegephase_gestartet = True
@@ -190,7 +193,7 @@ class RedLineDetector(DTROS):
                         y_clamped = max(100, min(corner_y, 400))
                         offset = int(np.interp(y_clamped, [100, 300], [0, 200]))
 
-                        target_x = corner_x + offset - 80  # Nach links korrigieren für Rechtskurve
+                        target_x = corner_x + offset - 200  # Nach links korrigieren für Rechtskurve
 
                         if self.debug:
                             cv2.circle(frame, (target_x, corner_y), 6, (0, 0, 255), -1)
@@ -221,6 +224,21 @@ class RedLineDetector(DTROS):
                     self.left_x_value = None
                     self.abbiege_start_time = None
                     self.last_turn_completed_time = current_time
+                    self.direction_already_published = False
+
+            # --- NEU: Nur tiefste rote Box überwachen ---
+            if not self.abbiegephase_gestartet and not self.waiting_at_line:
+                if filtered_contours_red:
+                    bottommost = max(filtered_contours_red, key=lambda cnt: cv2.boundingRect(cnt)[1])
+                    x, y, w, h = cv2.boundingRect(bottommost)
+                    if y > 210:
+                        self.pub_info.publish(Int32(1))
+                        if self.debug:
+                            rospy.loginfo(f"[Info] Unterste rote Box bei y={y} → sende Int32(1)")
+                else:
+                    self.pub_info.publish(Int32(0))
+                    if self.debug:
+                        rospy.loginfo("[Info] Keine rote Box erkannt → sende Int32(0)")
 
             if self.debug:
                 for cnt in filtered_contours_red:

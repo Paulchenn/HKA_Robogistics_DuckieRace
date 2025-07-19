@@ -5,6 +5,7 @@ import rospy
 import numpy as np
 import os
 import yaml
+import math
 
 from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
@@ -18,16 +19,7 @@ class BypassDuckieNode(DTROS):
         super(BypassDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
 
-        self.debug = False  # oder False, je nachdem
-        # Subscriber for nearest duckie coordinates
-        # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
-        self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestBB"
-        self.sub_duckieNearestBB = rospy.Subscriber(self._duckieNearestBB_topic, Float64MultiArray, self.bypassDuckie, queue_size=1)
-        
-        # Publisher for driving commands
-        self._cmd_topic = f"/{self._vehicle_name}/detect/duckie/bypass_cmd"
-        self.pub_bypassCmd_vel = rospy.Publisher(self._cmd_topic, Twist2DStamped, queue_size=1)
-
+        self.debug = False
         with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
@@ -35,18 +27,24 @@ class BypassDuckieNode(DTROS):
         self._bridge = CvBridge()
         self.image = None
 
-        # Fahrbahnrand-Daten
-        self.right_x = None  # gelbe Linie
-        self.left_x = None   # weiße Linie
+        self.right_x = None
+        self.left_x = None
 
-        # Zustand
+        # Duckie Infos
+        self.duckie_seen = False
+        self.y2 = None
+        self.last_y2 = None
+
+        # Ausweich-Modus
         self.bypass_mode = 0
         self.mode1_start_time = None
         self.right_duckie_last_seen = rospy.Time.now()
+        self.current_offset = 0
+        self.max_offset = 120
 
         # Subscriber
-        rospy.Subscriber(f"/{self._vehicle_name}/detect/duckie/nearestBB", Float64MultiArray, self.bypassDuckie, queue_size=1)
-        rospy.Subscriber(f"/{self._vehicle_name}/detect/duckie/nearestBBright", Float64MultiArray, self.cb_nearestBBright, queue_size=1)
+        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestBB", Float64MultiArray, self.cb_duckieNearestBB, queue_size=1)
+        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestRightBB", Float64MultiArray, self.cb_nearestBBright, queue_size=1)
         rospy.Subscriber(f"/{self._vehicle_name}/detect/lane/right_x", Float64, self.cb_right_x, queue_size=1)
         rospy.Subscriber(f"/{self._vehicle_name}/detect/lane/left_x", Float64, self.cb_left_x, queue_size=1)
         rospy.Subscriber(f"/{self._vehicle_name}/camera_node/image/compressed", CompressedImage, self.cb_image, queue_size=1)
@@ -54,9 +52,28 @@ class BypassDuckieNode(DTROS):
         # Publisher
         self.pub_target_override = rospy.Publisher(f"/{self._vehicle_name}/detect/duckie/bypass_target", Float64, queue_size=1)
         self.pub_duckie_info = rospy.Publisher(f"/{self._vehicle_name}/detect/duckie/info", Int32, queue_size=1)
+        self.pub_bypassCmd_vel = rospy.Publisher(f"/{self._vehicle_name}/detect/duckie/bypass_cmd", Twist2DStamped, queue_size=1)
 
-        # Timer für periodisches Prüfen auf Rückkehr in Modus 0
-        rospy.Timer(rospy.Duration(0.1), self.check_mode_reset)
+    def cb_duckieNearestBB(self, msg):
+        if msg.data:
+            x1, y1, x2, y2 = map(int, msg.data)
+            self.y2 = y2
+            self.last_y2 = y2  # nur aktualisieren, nicht löschen
+            self.duckie_seen = True
+            if self.debug:
+                rospy.loginfo(f"[DUCKIE] BB: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
+        else:
+            self.duckie_seen = False
+            self.y2 = None
+            # self.last_y2 NICHT löschen
+            if self.debug:
+                rospy.loginfo("[DUCKIE] Keine Ente erkannt")
+
+    def cb_nearestBBright(self, msg):
+        if msg.data:
+            self.right_duckie_last_seen = rospy.Time.now()
+            if self.debug:
+                rospy.loginfo("[BYPASS] Ente im rechten Sichtfeld erkannt")
 
     def cb_right_x(self, msg):
         self.right_x = msg.data
@@ -66,76 +83,6 @@ class BypassDuckieNode(DTROS):
 
     def cb_image(self, msg):
         self.image = self._bridge.compressed_imgmsg_to_cv2(msg)
-
-    def cb_nearestBBright(self, msg):
-        if msg.data:
-            self.right_duckie_last_seen = rospy.Time.now()
-            if self.debug:
-                rospy.loginfo("[BYPASS] Ente im rechten Sichtfeld erkannt")
-
-    def bypassDuckie(self, nearestDuckie):
-        y_min4stop = self.conf['min_distance_nearestDuckie']
-        duckie_seen = False
-        y2 = None
-        target_x = None
-
-        if nearestDuckie.data:
-            x1, y1, x2, y2 = map(int, nearestDuckie.data)
-            duckie_seen = True
-            if self.debug:
-                rospy.loginfo(f"[DUCKIE] BB: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
-        else:
-            if self.debug:
-                rospy.loginfo("[DUCKIE] Keine Ente erkannt")
-
-        if self.debug:
-            rospy.loginfo(f"[BYPASS] Aktueller Modus: {self.bypass_mode}")
-
-        # --- MODUS 0: Ente erkennen und auf Modus 1 umschalten ---
-        if self.bypass_mode == 0:
-            if duckie_seen and y2 < y_min4stop:
-                self.pub_duckie_info.publish(Int32(1))
-                if self.debug:
-                    rospy.loginfo("[BYPASS] Duckie erkannt (fern) – verlangsamen")
-            elif duckie_seen and y2 >= y_min4stop:
-                self.pub_duckie_info.publish(Int32(2))
-                self.bypass_mode = 1
-                self.mode1_start_time = rospy.Time.now()
-                if self.debug:
-                    rospy.loginfo("[BYPASS] Duckie nah – starte Ausweichmanöver (Modus 1)")
-
-        # --- MODUS 1: Mindestens 2 Sekunden aktiv bleiben und Linien folgen ---
-        if self.bypass_mode == 1:
-            self.pub_duckie_info.publish(Int32(2))
-            if self.right_x is not None:
-                target_x = self.right_x - 100
-                self.pub_target_override.publish(Float64(target_x))
-                if self.debug:
-                    rospy.loginfo(f"[BYPASS DEBUG] Modus 1 – nur gelb: target_x = {target_x}")
-            else:
-                if self.debug:
-                    rospy.logwarn("[BYPASS DEBUG] Modus 1 – keine Linien erkannt")
-
-        # Duckie nicht mehr sichtbar in Modus 0
-        if not duckie_seen and self.bypass_mode == 0:
-            self.pub_duckie_info.publish(Int32(0))
-            if self.debug:
-                rospy.loginfo("[BYPASS] Duckie nicht mehr sichtbar in Modus 0")
-
-        # GUI immer aktualisieren
-        self.update_gui(target_x)
-
-    def check_mode_reset(self, event):
-        """Timer-callback: Prüft, ob wir aus Modus 1 zurück auf Modus 0 wechseln dürfen."""
-        if self.bypass_mode == 1:
-            time_in_mode1 = (rospy.Time.now() - self.mode1_start_time).to_sec()
-            time_since_right_duckie = (rospy.Time.now() - self.right_duckie_last_seen).to_sec()
-
-            if time_in_mode1 >= 5.0 and time_since_right_duckie >= 1.0:
-                self.bypass_mode = 0
-                self.mode1_start_time = None
-                if self.debug:
-                    rospy.loginfo("[BYPASS] Wechsel zurück zu Modus 0 nach Umfahrung")
 
     def update_gui(self, target_x=None):
         if self.image is None:
@@ -152,7 +99,71 @@ class BypassDuckieNode(DTROS):
             cv2.imshow(self._window_name, img)
             cv2.waitKey(1)
 
+    def run(self):
+        rate = rospy.Rate(10)
+        y_min4stop = self.conf['min_distance_nearestDuckie']
+
+        while not rospy.is_shutdown():
+            target_x = None
+
+            # --- MODUS 0 ---
+            if self.bypass_mode == 0:
+                if self.duckie_seen and self.y2 is not None:
+                    if self.y2 < y_min4stop:
+                        self.pub_duckie_info.publish(Int32(1))
+                        if self.debug:
+                            rospy.loginfo("[BYPASS] Duckie erkannt (fern) – verlangsamen")
+                    elif self.y2 >= y_min4stop:
+                        self.pub_duckie_info.publish(Int32(2))
+                        self.bypass_mode = 1
+                        self.mode1_start_time = rospy.Time.now()
+                        if self.debug:
+                            rospy.loginfo("[BYPASS] Duckie nah – starte Ausweichmanöver (Modus 1)")
+                else:
+                    self.pub_duckie_info.publish(Int32(0))
+                    if self.debug:
+                        rospy.loginfo("[BYPASS] Duckie nicht sichtbar in Modus 0")
+
+            # --- MODUS 1 ---
+            if self.bypass_mode == 1:
+                self.pub_duckie_info.publish(Int32(2))
+
+                if self.right_x is not None:
+                    time_in_mode1 = (rospy.Time.now() - self.mode1_start_time).to_sec()
+                    duration = 2.5  # Sekundendauer der Ausweichbewegung
+
+                    # Normiere Zeitverlauf von 0 bis 1
+                    t_norm = min(max(time_in_mode1 / duration, 0.0), 1.0)
+
+                    # Cosinus-Kurve (Ease-In-Out): +1 → -1 über Zeit
+                    offset_factor = math.cos(t_norm * math.pi)  # 1→-1
+                    offset = offset_factor * 150
+
+                    target_x = self.right_x + offset
+                    self.pub_target_override.publish(Float64(target_x))
+
+                    if self.debug:
+                        rospy.loginfo(f"[BYPASS DEBUG] Modus 1 – t={round(t_norm,2)}, offset={int(offset)}, target_x = {int(target_x)}")
+                else:
+                    if self.debug:
+                        rospy.logwarn("[BYPASS DEBUG] Modus 1 – keine Linien erkannt")
+
+
+                # Prüfe Rückkehrbedingungen
+                time_in_mode1 = (rospy.Time.now() - self.mode1_start_time).to_sec()
+                time_since_right = (rospy.Time.now() - self.right_duckie_last_seen).to_sec()
+                if time_in_mode1 >= 5.0 and time_since_right >= 1.0:
+                    self.bypass_mode = 0
+                    self.mode1_start_time = None
+                    self.current_offset = 0
+                    self.last_y2 = None
+                    if self.debug:
+                        rospy.loginfo("[BYPASS] Wechsel zurück zu Modus 0 nach Umfahrung")
+
+            self.update_gui(target_x)
+            rate.sleep()
+
 
 if __name__ == '__main__':
     node = BypassDuckieNode(node_name='bypass_duckie_node')
-    rospy.spin()
+    node.run()

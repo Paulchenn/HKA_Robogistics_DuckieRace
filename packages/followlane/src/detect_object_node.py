@@ -42,6 +42,9 @@ class DetectParkingSlotNode(DTROS):
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
         self._duckieNearestBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestBB"
         self.pup_duckieNearestBB = rospy.Publisher(self._duckieNearestBB_topic, Float64MultiArray, queue_size=1)
+        # Duckie nearest Bounding Box on right lane (BB) coordinates (x1, y1, x2, y2)
+        self._duckieNearestRightBB_topic = f"/{self._vehicle_name}/detect/object/duckieNearestRightBB"
+        self.pup_duckieNearestRightBB = rospy.Publisher(self._duckieNearestRightBB_topic, Float64MultiArray, queue_size=1)
 
         # Publisher for nearest bot coordinates
         # Duckie nearest Bounding Box (BB) coordinates (x1, y1, x2, y2)
@@ -62,7 +65,7 @@ class DetectParkingSlotNode(DTROS):
 
     def cbDetectObjects(self, image_msg):
         self.frame_count += 1
-        if self.frame_count % 5 != 0:  # Take only every fifth picture
+        if self.frame_count % 10 != 0:  # Take only every tenth picture
             return
 
         # Convert CompressedImage message to OpenCV image
@@ -71,9 +74,26 @@ class DetectParkingSlotNode(DTROS):
         # Create an empty mask with the same size as the image
         mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
         # Define polygon points for the area of interest
-        polygon = self.get_polygon()
+        polygon = self.get_polygon("mask")
         # Draw the polygon on the mask
         cv2.fillPoly(mask, [polygon], 255)
+
+        # Create an empty mask with the same size as the image
+        mask_lane = np.zeros(cv_image.shape[:2], dtype=np.uint8)
+        # Define polygon points for the area of interest
+        polygon = self.get_polygon("mask_lane")
+        # Draw the polygon on the mask
+        cv2.fillPoly(mask_lane, [polygon], 255)
+
+        # Create an empty mask with the same size as the image
+        mask_laneRight = np.zeros(cv_image.shape[:2], dtype=np.uint8)
+        # Shift the polygon of "mask_lane" to the right by 120 pixels
+        polygon_lane = self.get_polygon("mask_lane")
+        polygon_shifted = polygon_lane.copy()
+        polygon_shifted[:, 0] += 180  # shift X coordinates only
+        # Draw shifted polygon on right lane mask
+        cv2.fillPoly(mask_laneRight, [polygon_shifted], 255)
+
 
         # Run YOLO model on the image
         results = self._model(cv_image, conf=0.65, iou=0.5, agnostic_nms=True, verbose=False)
@@ -90,10 +110,18 @@ class DetectParkingSlotNode(DTROS):
         filteredResults_duckie, nearest_duckie = self.get_filteredResults_and_nearest(
             results,
             "duckie",
-            mask,
+            mask_lane,
             filtered_results=[],
             y_lowest=0
         )
+        filteredResults_duckieRight, nearest_duckieRight = self.get_filteredResults_and_nearest(
+            results,
+            "duckie",
+            mask_laneRight,
+            filtered_results=[],
+            y_lowest=0
+        )
+        # Fil
         # Filter detected bots inside polygon mask and find nearest one
         filteredResults_bot, nearest_bot = self.get_filteredResults_and_nearest(
             results,
@@ -185,15 +213,24 @@ class DetectParkingSlotNode(DTROS):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
         # Finales Bild mit Slot-Zustand senden
+        # Zeichne Masken-Konturen ein (nur visuell, ändert die Maske nicht)
+
+        cv2.polylines(annotated_frame, [polygon_lane], isClosed=True, color=(0, 255, 255), thickness=2)
+        cv2.polylines(annotated_frame, [polygon_shifted], isClosed=True, color=(255, 0, 255), thickness=2)
+
+
         my_img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
         self.pup_image.publish(my_img_msg)
 
-        
         # === Publish ===
         if nearest_duckie is not None:
             x1, y1, x2, y2 = map(int, nearest_duckie.xyxy[0])
             msg_duckieNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
             self.pup_duckieNearestBB.publish(msg_duckieNearestBB)
+        if nearest_duckieRight is not None:
+            x1, y1, x2, y2 = map(int, nearest_duckieRight.xyxy[0])
+            msg_duckieNearestRightBB = Float64MultiArray(data=[x1, y1, x2, y2])
+            self.pup_duckieNearestRightBB.publish(msg_duckieNearestRightBB)
         if nearest_bot is not None:
             x1, y1, x2, y2 = map(int, nearest_bot.xyxy[0])
             msg_botNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
@@ -218,12 +255,12 @@ class DetectParkingSlotNode(DTROS):
             print(' ', nearest_occSlot)
                 
                 
-    def get_polygon(self):
+    def get_polygon(self, mask_name):
         return np.array([
-            [self.conf['mask']['top_left_x'], self.conf['mask']['top_left_y']],
-            [self.conf['mask']['top_right_x'], self.conf['mask']['top_right_y']],
-            [self.conf['mask']['bottom_right_x'], self.conf['mask']['bottom_right_y']],
-            [self.conf['mask']['bottom_left_x'], self.conf['mask']['bottom_left_y']],
+            [self.conf[mask_name]['top_left_x'], self.conf[mask_name]['top_left_y']],
+            [self.conf[mask_name]['top_right_x'], self.conf[mask_name]['top_right_y']],
+            [self.conf[mask_name]['bottom_right_x'], self.conf[mask_name]['bottom_right_y']],
+            [self.conf[mask_name]['bottom_left_x'], self.conf[mask_name]['bottom_left_y']],
         ], dtype=np.int32)
         
         

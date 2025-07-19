@@ -14,7 +14,7 @@ class ControlLaneNode(DTROS):
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self.enable = False
-        self.debug = True  # Debug-Modus für Konsolenausgaben
+        self.debug = False # Debug-Modus für Konsolenausgaben
         self.duckie_info = 0  # 0 = keine Ente, 1 = fern, 2 = nah
 
         # Konfiguration laden
@@ -48,7 +48,7 @@ class ControlLaneNode(DTROS):
         self.stop_sent = False
 
         # PID Parameter
-        self.kp = 10
+        self.kp = 8
         self.ki = 0.1
         self.kd = 0.4
 
