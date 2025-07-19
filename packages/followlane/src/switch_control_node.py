@@ -5,6 +5,7 @@ import os
 from enum import Enum
 from std_msgs.msg import Float64, Int32
 from duckietown.dtros import DTROS, NodeType
+from sensor_msgs.msg import Image
 
 class ControlState(Enum):
     STOP            = 0
@@ -23,7 +24,7 @@ class SwitchControlNode(DTROS):
 
         # Debug
         self.debug = False
-        self.debug_run = True
+        self.debug_run = False
 
         # Werte aus den anderen Nodes
         self.lane_x = None
@@ -74,6 +75,8 @@ class SwitchControlNode(DTROS):
 
         rospy.on_shutdown(self.fnShutDown)
 
+        self.checkYoloRunning = False
+
     def cbLaneX(self, msg: Float64):
         self.lane_x = msg.data
         if self.debug:
@@ -109,6 +112,12 @@ class SwitchControlNode(DTROS):
 
     def run(self):
         rate = rospy.Rate(10)
+
+        if not self.checkYoloRunning:
+            topic_name_1 = f"/{self._vehicle_name}/detect/object/image"
+            rospy.wait_for_message(topic_name_1, Image, timeout=5.0)
+            self.checkYoloRunning = True
+
         while not rospy.is_shutdown():
             selected_x = None
 
