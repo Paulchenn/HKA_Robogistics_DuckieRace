@@ -115,7 +115,7 @@ class SwitchControlNode(DTROS):
 
         if not self.checkYoloRunning:
             topic_name_1 = f"/{self._vehicle_name}/detect/object/image"
-            rospy.wait_for_message(topic_name_1, Image, timeout=5.0)
+            rospy.wait_for_message(topic_name_1, Image, timeout=20.0)
             self.checkYoloRunning = True
 
         while not rospy.is_shutdown():
