@@ -46,10 +46,33 @@ class DetectParkingSlotNode(DTROS):
         # Buffer size in frames
         HISTORY_LENGTH = 5
 
-        # Tracking confidence for objects
+        # for image annotating
+        self.last_boxes = None
+        self.frames_since_last = 100
+
+        # Confidence and Bridging for duckie
         self.history_duckie = deque(maxlen=HISTORY_LENGTH)
+        self.last_duckie_bbox = None
+        self.frames_since_last_duckie = 100  # initial large value
+        self.DUCKIE_BRIDGE_LIMIT = self.conf["bridge_limit"]
+
+        # Confidence and Bridging for duckie right
+        self.history_duckieRight = deque(maxlen=HISTORY_LENGTH)
+        self.last_duckieRight_bbox = None
+        self.frames_since_last_duckieRight = 100  # initial large value
+        self.DUCKIERIGHT_BRIDGE_LIMIT = self.conf["bridge_limit"]
+
+        # Confidence and Bridging for bot
         self.history_bot = deque(maxlen=HISTORY_LENGTH)
+        self.last_bot_bbox = None
+        self.frames_since_last_bot = 100  # initial large value
+        self.BOT_BRIDGE_LIMIT = self.conf["bridge_limit"]
+
+        # Confidence and Bridging for slot
         self.history_slot = deque(maxlen=HISTORY_LENGTH)
+        self.last_slot_bbox = None
+        self.frames_since_last_slot = 100  # initial large value
+        self.SLOT_BRIDGE_LIMIT = self.conf["bridge_limit"]
 
         # === Subscribers ===
         # for camera images
@@ -179,7 +202,31 @@ class DetectParkingSlotNode(DTROS):
             results = self._model(self.cv_image, conf=0.7, iou=0.5, agnostic_nms=True, verbose=False)
 
             # Plot results on the image
-            annotated_frame = results[0].plot()
+            boxes = results[0].boxes
+            annotated_boxes = boxes if boxes is not None and len(boxes) > 0 else None
+            # Neue oder überbrückte Boxen verwenden
+            if annotated_boxes is not None:
+                self.last_boxes = annotated_boxes
+                self.frames_since_last = 0
+            else:
+                if self.last_boxes is not None and self.frames_since_last < self.conf["bridge_limit"]:
+                    annotated_boxes = self.last_boxes
+                    self.frames_since_last += 1
+                else:
+                    self.last_boxes = None
+                    self.frames_since_last = self.conf["bridge_limit"]
+                    annotated_boxes = None
+            annotated_frame = self.cv_image.copy()
+            if annotated_boxes is not None:
+                for box in annotated_boxes:
+                    xyxy = box.xyxy[0].cpu().numpy().astype(int)
+                    class_id = int(box.cls[0].item())
+                    conf = float(box.conf[0].item())
+
+                    label = f"{results[0].names[class_id]} {conf:.2f}"
+                    cv2.rectangle(annotated_frame, (xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]), (0,255,0), 2)
+                    cv2.putText(annotated_frame, label, (xyxy[0], xyxy[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+
 
             # Filter detected duckies inside polygon mask and find nearest one
             filteredResults_duckie, nearest_duckie = self.get_filteredResults_and_nearest(
@@ -291,46 +338,96 @@ class DetectParkingSlotNode(DTROS):
             cv2.polylines(annotated_frame, [polygon_lane], isClosed=True, color=(0, 255, 255), thickness=2)
             cv2.polylines(annotated_frame, [polygon_shifted], isClosed=True, color=(255, 0, 255), thickness=2)
 
+            # === Confidence Updates ===
+            self.history_duckie.append(1 if nearest_duckie is not None else 0)
+            self.history_duckieRight.append(1 if nearest_duckieRight is not None else 0)
+            self.history_bot.append(1 if nearest_bot is not None else 0)
+            self.history_slot.append(1 if best_slot_box is not None else 0)
+
+            # Confidence Scores
+            conf_duckie = sum(self.history_duckie) / len(self.history_duckie)
+            conf_duckieRight = sum(self.history_duckieRight) / len(self.history_duckieRight)
+            conf_bot = sum(self.history_bot) / len(self.history_bot)
+            conf_slot = sum(self.history_slot) / len(self.history_slot)
+
             # === Publish ===
-            # duckies
+            # image
             my_img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
             self.pup_image.publish(my_img_msg)
-            if nearest_duckie is not None:
+
+            # duckies
+            if nearest_duckie is not None and conf_duckie>self.conf["confidence_temporal"]:
+                # New valid Duckie BBox --> save
                 x1, y1, x2, y2 = map(int, nearest_duckie.xyxy[0])
                 msg_duckieNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
+                self.last_duckie_bbox = msg_duckieNearestBB
+                self.frames_since_last_duckie = 0
+            elif self.last_duckie_bbox is not None and self.frames_since_last_duckie<self.DUCKIE_BRIDGE_LIMIT:
+                # Bridging active
+                self.frames_since_last_duckie += 1
             else:
+                # No valid detection & no bridging anymore --> Reset
+                self.last_duckie_bbox = None
+                self.frames_since_last_duckie = 100
                 msg_duckieNearestBB = Float64MultiArray(data=None)
             if self.conf['debugPrints_detectObject']:
                 rospy.loginfo(f"[nearest Duckie] {msg_duckieNearestBB}")
             self.pup_duckieNearestBB.publish(msg_duckieNearestBB)
 
             # duckies right
-            if nearest_duckieRight is not None:
+            if nearest_duckieRight is not None and conf_duckieRight>self.conf["confidence_temporal"]:
+                # New valid Duckie Right BBox --> save
                 x1, y1, x2, y2 = map(int, nearest_duckieRight.xyxy[0])
                 msg_duckieNearestRightBB = Float64MultiArray(data=[x1, y1, x2, y2])
+                self.last_duckieRight_bbox = msg_duckieNearestRightBB
+                self.frames_since_last_duckieRight = 0
+            elif self.last_duckieRight_bbox is not None and self.frames_since_last_duckieRight<self.DUCKIERIGHT_BRIDGE_LIMIT:
+                # Bridging active
+                self.frames_since_last_duckieRight += 1
             else:
+                # No valid detection & no bridging anymore --> Reset
+                self.last_duckieRight_bbox = None
+                self.frames_since_last_duckieRight = 100
                 msg_duckieNearestRightBB = Float64MultiArray(data=None)
             if self.conf['debugPrints_detectObject']:
-                rospy.loginfo(f"[nearest Duckie right] {msg_duckieNearestRightBB}")
+                rospy.loginfo(f"[nearest Duckie Right] {msg_duckieNearestRightBB}")
             self.pup_duckieNearestRightBB.publish(msg_duckieNearestRightBB)
 
             # bots
-            if nearest_bot is not None:
+            if nearest_bot is not None and conf_bot>self.conf["confidence_temporal"]:
+                # New valid Bot BBox --> save
                 x1, y1, x2, y2 = map(int, nearest_bot.xyxy[0])
                 msg_botNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
+                self.last_bot_bbox = msg_botNearestBB
+                self.frames_since_last_bot = 0
+            elif self.last_bot_bbox is not None and self.frames_since_last_bot<self.BOT_BRIDGE_LIMIT:
+                # Bridging active
+                self.frames_since_last_bot += 1
             else:
+                # No valid detection & no bridging anymore --> Reset
+                self.last_bot_bbox = None
+                self.frames_since_last_bot = 100
                 msg_botNearestBB = Float64MultiArray(data=None)
             if self.conf['debugPrints_detectObject']:
                 rospy.loginfo(f"[nearest Bot] {msg_botNearestBB}")
             self.pup_botNearestBB.publish(msg_botNearestBB)
 
             # free slot
-            if not is_occupied:
+            if best_slot_box is not None and not is_occupied and conf_slot>self.conf["confidence_temporal"]:
+                # New valid Slot BBox --> save
                 msg_parkingNearestBB = Float64MultiArray(data=best_slot_box)
+                self.last_slot_bbox = msg_parkingNearestBB
+                self.frames_since_last_slot = 0
+            elif self.last_slot_bbox is not None and self.frames_since_last_slot<self.SLOT_BRIDGE_LIMIT:
+                # Bridging active
+                self.frames_since_last_slot += 1
             else:
+                # No valid detection & no bridging anymore --> Reset
+                self.last_slot_bbox = None
+                self.frames_since_last_slot = 100
                 msg_parkingNearestBB = Float64MultiArray(data=None)
             if self.conf['debugPrints_detectObject']:
-                rospy.loginfo(f"[nearest free Slot] {msg_parkingNearestBB}")
+                rospy.loginfo(f"[nearest Slot] {msg_parkingNearestBB}")
             self.pup_parkingBB.publish(msg_parkingNearestBB)
             
             if False: #self.conf['debugPrints_detectObject']:
