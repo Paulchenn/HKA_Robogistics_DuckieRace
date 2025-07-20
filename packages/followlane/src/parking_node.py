@@ -131,7 +131,7 @@ class ParkingNode(DTROS):
             none
         '''
         if not msg.data or len(msg.data) != 4:
-            if self.conf["debugPrints_parking"]:
+            if self.conf["debugPrints_parking"] and self.conf["go_parking"]:
                 rospy.loginfo(f"[PARKING] Wrong data")
             self.curr_bbox = None
             return
@@ -378,7 +378,7 @@ class ParkingNode(DTROS):
         # Dynamically adjust speed (v) based on total error
         total_error = abs(lateral_error) #+ abs(angle_error)
         min_v = 0.15
-        max_v = 0.25
+        max_v = 0.2
         v = -min(max_v, 0.02 * total_error)
 
         if abs(omega) > 0.1 and abs(v) < abs(min_v):
@@ -417,17 +417,20 @@ class ParkingNode(DTROS):
         '''
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
-            if self.cv_image is None or self.camImage is None or self.curr_bbox is None or not self.conf["go_parking"]:
+            if self.cv_image is None or self.camImage is None or not self.conf["go_parking"]:
                 if self.conf["debugPrints_parking"] and not self.conf["go_parking"]:
                     rospy.loginfo(f"[PARKING] deactivated")
                 rate.sleep()
                 continue
-            
-            timeDelta_toLastBB = time.time() - self.time_lastBB
-            if timeDelta_toLastBB > 2:
-                x1 = x2 = y1 = y2 = 0
-            else:
-                x1, y1, x2, y2 = self.curr_bbox.data
+            elif self.curr_bbox is None and self.state == "IDLE":
+                rate.sleep()
+                continue
+            elif self.curr_bbox is not None:
+                timeDelta_toLastBB = time.time() - self.time_lastBB
+                if timeDelta_toLastBB > 2:
+                    x1 = x2 = y1 = y2 = 0
+                else:
+                    x1, y1, x2, y2 = self.curr_bbox.data
 
             if self.time_startPark is not None:
                 self.delay_startPark = time.time()-self.time_startPark
