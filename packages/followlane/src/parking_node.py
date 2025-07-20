@@ -43,6 +43,13 @@ class ParkingNode(DTROS):
         self.time_startPark = None
         self.time_inPark = None
 
+        # Initializing for PID-Control
+        self.prev_lateral_error = 0.0
+        self.integral_lateral_error = 0.0
+        self.prev_angle_error = 0.0
+        self.integral_angle_error = 0.0
+        self.last_time = time.time()
+
         # Read config file
         with open('packages/followlane/config/detect_duckieBotSlot.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
@@ -300,8 +307,8 @@ class ParkingNode(DTROS):
 
         # Get image width and define two x-positions: left and right
         width = self.camImage.shape[1]
-        x_left = int(width * 0.25)
-        x_right = int(width * 0.75)
+        x_left = int(width * 0)
+        x_right = int(width * 1)
 
         # Calculate corresponding y-values for the yellow and target line at those x positions
         y_yellow_left = m_yellow * x_left + b_yellow
@@ -315,27 +322,67 @@ class ParkingNode(DTROS):
         lateral_error_right = y_target_right - y_yellow_right
 
         # Average lateral error as main input for steering correction
-        if lateral_error_left < 0 and lateral_error_right < 0:
-            lateral_error = (lateral_error_left + lateral_error_right) / 2
-        else:
+        if lateral_error_left > 0 and lateral_error_right > 0:
             lateral_error = 0
+            v = omega = 0
+            self.state = "WAIT"
+            self.status_text = "Status: WAIT --> parked"
+            self.time_inPark = time.time()
+        else:
+            lateral_error = (lateral_error_left + lateral_error_right) / 2
 
         # Estimate angular deviation from difference between left and right error
         # (larger difference implies line is rotated relative to target line)
         angle_error = lateral_error_right - lateral_error_left
 
-        # Control gains
-        Kp_lateral = 0.007  # Proportional gain for lateral position
-        Kp_angle = 0.07     # Proportional gain for angle correction
-        Kp_speed = 0.015     # Gain for speed scaling
+        # Time step
+        current_time = time.time()
+        dt = current_time - self.last_time if self.last_time else 0.1
+        self.last_time = current_time
 
-        # Compute omega from lateral + angle error
-        omega = Kp_lateral * lateral_error + Kp_angle * angle_error
+        # PID gains for lateral control
+        Kp_lat = 0.007
+        Ki_lat = 0.0005
+        Kd_lat = 0.002
+
+        # PID gains for angle control
+        Kp_ang = 0.04
+        Ki_ang = 0.0001
+        Kd_ang = 0.01
+
+        # PID for lateral error
+        self.integral_lateral_error += lateral_error * dt
+        self.integral_lateral_error = max(min(self.integral_lateral_error, 100), -100)
+        derivative_lateral_error = (lateral_error - self.prev_lateral_error) / dt if dt > 0 else 0
+        self.prev_lateral_error = lateral_error
+
+        omega_lat = (Kp_lat * lateral_error +
+                     Ki_lat * self.integral_lateral_error +
+                     Kd_lat * derivative_lateral_error)
+
+        # PID for angle error
+        self.integral_angle_error += angle_error * dt
+        self.integral_angle_error = max(min(self.integral_angle_error, 100), -100)
+        derivative_angle_error = (angle_error - self.prev_angle_error) / dt if dt > 0 else 0
+        self.prev_angle_error = angle_error
+
+        omega_ang = (Kp_ang * angle_error +
+                     Ki_ang * self.integral_angle_error +
+                     Kd_ang * derivative_angle_error)
+
+        omega = omega_lat + omega_ang
+
+        if abs(omega) < 0.1:
+            omega = 0.0
 
         # Dynamically adjust speed (v) based on total error
         total_error = abs(lateral_error) #+ abs(angle_error)
+        min_v = 0.15
         max_v = 0.25
-        v = -min(max_v, Kp_speed * total_error)
+        v = -min(max_v, 0.02 * total_error)
+
+        if abs(omega) > 0.1 and abs(v) < abs(min_v):
+            v = -max(abs(v), abs(min_v))
 
         # # Calculate angular velocity (omega) and set constant backward velocity (v)
         # omega = Kp_lateral * lateral_error + Kp_angle * angle_error
@@ -343,7 +390,7 @@ class ParkingNode(DTROS):
 
         # Debug output
         if self.conf["debugPrints_parking"]:
-            rospy.loginfo(f"[PARKING] lat_err L/R: {lateral_error_left:.2f}/{lateral_error_right:.2f}, "
+            rospy.loginfo(f"[PARKING] lat_err L/R/ges: {lateral_error_left:.2f}/{lateral_error_right:.2f}/{lateral_error:.2f}, "
                         f"angle_err: {angle_error:.2f}, omega: {omega:.2f}, v: {v:.2f}")
 
         # Stop condition if errors are small enough
@@ -422,12 +469,16 @@ class ParkingNode(DTROS):
                         reverse_turn = Twist2DStamped(v=v, omega=omega)
                         self.pub_lane_twist.publish(reverse_turn)
 
-                elif self.state == "WAIT" and self.delay_inPark>5:
+                elif self.state == "WAIT" and self.delay_inPark<=5:
+                    stopBot = Twist2DStamped(v=0, omega=0)
+                    self.pub_lane_twist.publish(stopBot)
+
+                elif self.state == "WAIT":
                     self.state = "EXIT"
                     self.status_text = "Status: EXIT"
                     exit_turn = Twist2DStamped(v=0.2, omega=-3.5)
                     self.pub_lane_twist.publish(exit_turn)
-                    rospy.sleep(2.0)
+                    rospy.sleep(1.0)
                     stopBot = Twist2DStamped(v=0, omega=0)
                     self.pub_lane_twist.publish(stopBot)
                     self.state = "IDLE"
