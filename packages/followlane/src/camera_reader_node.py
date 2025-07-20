@@ -29,14 +29,17 @@ class CameraReaderNode(DTROS):
         self.target_x_buffer = []
         self.image = None
 
-        rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback)
+        # === Publisher ===
         self.pub_lane = rospy.Publisher(f"/{self._vehicle_name}/detect/lane", Float64, queue_size=1)
-        rospy.on_shutdown(self.fnShutDown)
         self.pub_left_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/left_x", Float64, queue_size=1)
         self.pub_right_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/right_x", Float64, queue_size=1)
         self.pub_redline = rospy.Publisher(f"/{self._vehicle_name}/stop_line_detected", Bool, queue_size=1)
-        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestBB", Float64MultiArray, self.cb_duckie_lane)
-        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestRightBB", Float64MultiArray, self.cb_duckie_right)
+
+        # === Subscriber ===
+        rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback, queue_size=1)
+        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestBB", Float64MultiArray, self.cb_duckie_lane, queue_size=1)
+        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestRightBB", Float64MultiArray, self.cb_duckie_right, queue_size=1)
+
 
 
         self.duckie_lane_x = None

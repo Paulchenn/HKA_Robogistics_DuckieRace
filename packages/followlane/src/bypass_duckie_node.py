@@ -131,7 +131,7 @@ class BypassDuckieNode(DTROS):
 
                 if self.right_x is not None:
                     time_in_mode1 = (rospy.Time.now() - self.mode1_start_time).to_sec()
-                    duration = 1.5
+                    duration = 1.3
 
                     # Zeit normieren
                     t_norm = min(max(time_in_mode1 / duration, 0.0), 1.0)
@@ -151,7 +151,7 @@ class BypassDuckieNode(DTROS):
                 # Bedingung zum Wechsel in Modus 2
                 time_in_mode1 = (rospy.Time.now() - self.mode1_start_time).to_sec()
                 time_since_right = (rospy.Time.now() - self.right_duckie_last_seen).to_sec()
-                if time_in_mode1 >= 4 and time_since_right >= 1.0:
+                if time_in_mode1 >= 3 and time_since_right >= 1.0:
                     self.bypass_mode = 2
                     self.mode2_start_time = rospy.Time.now()
                     if self.debug:
@@ -163,13 +163,13 @@ class BypassDuckieNode(DTROS):
 
                 if self.right_x is not None:
                     time_in_mode2 = (rospy.Time.now() - self.mode2_start_time).to_sec()
-                    duration = 1.5
+                    duration = 1.3
 
                     t_norm = min(max(time_in_mode2 / duration, 0.0), 1.0)
 
-                    # Rückfahrt: Offset von -150 → +150
+                    # Rückfahrt: Offset von -120 → +120
                     offset_factor = -math.cos(t_norm * math.pi)  # -1 → +1
-                    offset = offset_factor * 150
+                    offset = offset_factor * 120
                     target_x = self.right_x + offset
                     self.pub_target_override.publish(Float64(target_x))
 

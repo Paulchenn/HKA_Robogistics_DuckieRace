@@ -22,9 +22,9 @@ class RedLineDetector(DTROS):
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
 
-        self.pub_red_line_info = rospy.Publisher(f"/{self._vehicle_name}/red_line_info", String, queue_size=10)
-        self.pub_info = rospy.Publisher(f"/{self._vehicle_name}/abfrage_info", Int32, queue_size=10)
-        self.pub_target_x = rospy.Publisher(f"/{self._vehicle_name}/target_x", Int32, queue_size=10)
+        self.pub_red_line_info = rospy.Publisher(f"/{self._vehicle_name}/red_line_info", String, queue_size=1)
+        self.pub_info = rospy.Publisher(f"/{self._vehicle_name}/abfrage_info", Int32, queue_size=1)
+        self.pub_target_x = rospy.Publisher(f"/{self._vehicle_name}/target_x", Int32, queue_size=1)
 
         self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.cb_image, queue_size=1)
         self.sub_redline = rospy.Subscriber(self._redLine_topic, Bool, self.process_stop_line, queue_size=1)

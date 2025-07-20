@@ -169,7 +169,7 @@ class DetectParkingSlotNode(DTROS):
         Returns:
             none
         '''
-        rate = rospy.Rate(5)
+        rate = rospy.Rate(3)
         while not rospy.is_shutdown():
             if self.cv_image is None:
                 rate.sleep()

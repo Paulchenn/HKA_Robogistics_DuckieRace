@@ -29,7 +29,7 @@ white:
   hh: 255
   sl: 0
   sh: 60
-  vl: 150
+  vl: 169
   vh: 255
 gelb:
   hl: 15
@@ -47,6 +47,6 @@ red:
   vh: 255
 
 v_min: 0.2
-v_max: 0.2
+v_max: 0.35
 
 
