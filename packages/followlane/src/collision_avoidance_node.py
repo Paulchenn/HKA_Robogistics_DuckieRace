@@ -1,32 +1,39 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 from sensor_msgs.msg import Range
-from std_msgs.msg import String
+from std_msgs.msg import Int32  # oder String, je nachdem was du willst
 
 class ToFCollisionAvoidanceNode:
-    def __init__(self, node_name):
+    def __init__(self):
         # Initialisiere Node
-        super(ToFCollisionAvoidanceNode, self).__init__(node_name=node_name)
+        rospy.init_node('tof_collision_avoidance_node')
 
         # Parameter
         self.threshold = 0.1  # Meter
+        self.distance = None  # letzte empfangene Distanz
 
-        # TODO Publisher für das Stoppen hier fertig erstellen
-        self.ToFInfo_pub = rospy.Publisher(queue_size=1)
+        # Publisher für Stop-Information (hier Int32, z.B. 3 = STOP)
+        self.ToFInfo_pub = rospy.Publisher('/tof/avoidance/info', Int32, queue_size=1)
 
         # Subscriber für den ToF Sensor
-        self.sub_ToFSensor = rospy.Subscriber('/vl53l1x_node/range', Range, self.range_callback)
+        rospy.Subscriber('/vl53l1x_node/range', Range, self.range_callback)
 
     def range_callback(self, msg):
-        distance = msg.range
-        if distance < self.threshold:
-            rospy.logwarn("Abstand unter Threshold: %.2f m", distance)
-            # TODO hier stop publishen
-            self.ToFInfo_pub.publish(3)  # Beispiel: 3 für STOP
-        else:
-            #hier normal lane following, man muss dafür nichts publishen, oder?
-            print()
+        self.distance = msg.range  # Speichere aktuelle Distanz
+
+    def run(self):
+        rate = rospy.Rate(10)  # 10 Hz Loop
+        while not rospy.is_shutdown():
+            if self.distance is not None:
+                if self.distance < self.threshold:
+                    rospy.logwarn(f"[ToF] STOP – Abstand unter Threshold: {self.distance:.2f} m")
+                    self.ToFInfo_pub.publish(Int32(3))  # 3 = STOP
+                else:
+                    # Kein Stop nötig → Lane-Following kann weiterlaufen
+                    rospy.loginfo_throttle(5, f"[ToF] OK – Abstand: {self.distance:.2f} m")
+            rate.sleep()
 
 if __name__ == '__main__':
     node = ToFCollisionAvoidanceNode()
-    rospy.spin()
+    node.run()
+

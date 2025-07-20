@@ -14,7 +14,7 @@ class ControlLaneNode(DTROS):
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self.enable = False
-        self.debug = False # Debug-Modus für Konsolenausgaben
+        self.debug = True # Debug-Modus für Konsolenausgaben
         self.duckie_info = 0  # 0 = keine Ente, 1 = fern, 2 = nah
 
         # Konfiguration laden
@@ -64,7 +64,7 @@ class ControlLaneNode(DTROS):
     def cbVehicleStatus(self, msg: Int32):
 
         self.vehicle_status = msg.data
-        self.enable = msg.data in [ControlState.LANE_NORMAL.value, ControlState.INTERSECTION.value, ControlState.LANE_SLOW.value,]
+        self.enable = msg.data in [ControlState.LANE_NORMAL.value, ControlState.INTERSECTION.value, ControlState.LANE_SLOW.value, ControlState.OBSTACLE.value]
 
         if not self.enable:
             if not self.stop_sent:

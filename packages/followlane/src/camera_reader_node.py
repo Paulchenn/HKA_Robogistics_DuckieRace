@@ -9,7 +9,7 @@ import time
 from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
-from std_msgs.msg import Float64, Bool
+from std_msgs.msg import Float64, Bool, Float64MultiArray
 
 
 class CameraReaderNode(DTROS):
@@ -35,6 +35,24 @@ class CameraReaderNode(DTROS):
         self.pub_left_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/left_x", Float64, queue_size=1)
         self.pub_right_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/right_x", Float64, queue_size=1)
         self.pub_redline = rospy.Publisher(f"/{self._vehicle_name}/stop_line_detected", Bool, queue_size=1)
+        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestBB", Float64MultiArray, self.cb_duckie_lane)
+        rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestRightBB", Float64MultiArray, self.cb_duckie_right)
+
+
+        self.duckie_lane_x = None
+        self.duckie_rightlane_x = None
+        self.duckie_tolerance = 15
+
+    def cb_duckie_lane(self, msg):
+        if msg.data and len(msg.data) == 4:
+            x1, _, x2, _ = msg.data
+            self.duckie_lane_x = int((x1 + x2) / 2)
+
+    def cb_duckie_right(self, msg):
+        if msg.data and len(msg.data) == 4:
+            x1, _, x2, _ = msg.data
+            self.duckie_rightlane_x = int((x1 + x2) / 2)
+
 
     def image_callback(self, msg):
         self.image = self._bridge.compressed_imgmsg_to_cv2(msg)
@@ -87,9 +105,20 @@ class CameraReaderNode(DTROS):
             if M['m00'] == 0:
                 continue
             cx = int(M['m10'] / M['m00'])
+
+            # Duckie-Toleranzprüfung
+            ignore = False
+            for duckie_x in [self.duckie_lane_x, self.duckie_rightlane_x]:
+                if duckie_x is not None and abs(cx - duckie_x) <= self.duckie_tolerance:
+                    ignore = True
+                    break
+            if ignore:
+                continue
+
             if rightmost_x is None or cx > rightmost_x:
                 rightmost_x = cx
                 cv2.drawContours(image, [cnt], -1, (0, 255, 255), 2)
+
 
         if leftmost_x is not None and rightmost_x is not None and leftmost_x > rightmost_x:
             self.pub_right_x.publish(Float64(rightmost_x))

@@ -23,7 +23,7 @@ class SwitchControlNode(DTROS):
         self._state = ControlState.LANE_NORMAL
 
         # Debug
-        self.debug = False
+        self.debug = False  # Debug-Modus für Konsolenausgaben
         self.debug_run = False
 
         # Werte aus den anderen Nodes
