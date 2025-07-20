@@ -7,6 +7,7 @@ import os
 import yaml
 import threading
 
+from collections import deque
 from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage, Image
@@ -41,6 +42,14 @@ class DetectParkingSlotNode(DTROS):
         # Read config file
         with open('packages/followlane/config/detect_duckieBotSlot.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
+
+        # Buffer size in frames
+        HISTORY_LENGTH = 5
+
+        # Tracking confidence for objects
+        self.history_duckie = deque(maxlen=HISTORY_LENGTH)
+        self.history_bot = deque(maxlen=HISTORY_LENGTH)
+        self.history_slot = deque(maxlen=HISTORY_LENGTH)
 
         # === Subscribers ===
         # for camera images
@@ -240,6 +249,7 @@ class DetectParkingSlotNode(DTROS):
             duckie_objects = filteredResults_duckie
             bot_objects = filteredResults_bot
 
+            is_occupied = None
             for slot_type, slot_box in all_slots:
                 box_slot = [int(x) for x in slot_box.xyxy[0]]
 
@@ -266,11 +276,6 @@ class DetectParkingSlotNode(DTROS):
                     rospy.loginfo(f"[OBJECT DETECTION] {best_slot_box}")
 
                 # PUBLISHER for free Slot
-                if not is_occupied:
-                    msg_parkingNearestBB = Float64MultiArray(data=best_slot_box)
-                    if self.conf['debugPrints_detectObject']:
-                        rospy.loginfo(f"[nearest free Slot] {msg_parkingNearestBB}")
-                    self.pup_parkingBB.publish(msg_parkingNearestBB)
 
                 color = (0, 0, 255) if is_occupied else (0, 255, 0)
                 label = 'Slot: OCCUPIED' if is_occupied else 'Slot: FREE'
@@ -287,26 +292,46 @@ class DetectParkingSlotNode(DTROS):
             cv2.polylines(annotated_frame, [polygon_shifted], isClosed=True, color=(255, 0, 255), thickness=2)
 
             # === Publish ===
+            # duckies
             my_img_msg = self._bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
             self.pup_image.publish(my_img_msg)
             if nearest_duckie is not None:
                 x1, y1, x2, y2 = map(int, nearest_duckie.xyxy[0])
                 msg_duckieNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
-                if self.conf['debugPrints_detectObject']:
-                    rospy.loginfo(f"[nearest Duckie] {msg_duckieNearestBB}")
-                self.pup_duckieNearestBB.publish(msg_duckieNearestBB)
+            else:
+                msg_duckieNearestBB = Float64MultiArray(data=None)
+            if self.conf['debugPrints_detectObject']:
+                rospy.loginfo(f"[nearest Duckie] {msg_duckieNearestBB}")
+            self.pup_duckieNearestBB.publish(msg_duckieNearestBB)
+
+            # duckies right
             if nearest_duckieRight is not None:
                 x1, y1, x2, y2 = map(int, nearest_duckieRight.xyxy[0])
                 msg_duckieNearestRightBB = Float64MultiArray(data=[x1, y1, x2, y2])
-                if self.conf['debugPrints_detectObject']:
-                    rospy.loginfo(f"[nearest Duckie right] {msg_duckieNearestRightBB}")
-                self.pup_duckieNearestRightBB.publish(msg_duckieNearestRightBB)
+            else:
+                msg_duckieNearestRightBB = Float64MultiArray(data=None)
+            if self.conf['debugPrints_detectObject']:
+                rospy.loginfo(f"[nearest Duckie right] {msg_duckieNearestRightBB}")
+            self.pup_duckieNearestRightBB.publish(msg_duckieNearestRightBB)
+
+            # bots
             if nearest_bot is not None:
                 x1, y1, x2, y2 = map(int, nearest_bot.xyxy[0])
                 msg_botNearestBB = Float64MultiArray(data=[x1, y1, x2, y2])
-                if self.conf['debugPrints_detectObject']:
-                    rospy.loginfo(f"[nearest Bot] {msg_botNearestBB}")
-                self.pup_botNearestBB.publish(msg_botNearestBB)
+            else:
+                msg_botNearestBB = Float64MultiArray(data=None)
+            if self.conf['debugPrints_detectObject']:
+                rospy.loginfo(f"[nearest Bot] {msg_botNearestBB}")
+            self.pup_botNearestBB.publish(msg_botNearestBB)
+
+            # free slot
+            if not is_occupied:
+                msg_parkingNearestBB = Float64MultiArray(data=best_slot_box)
+            else:
+                msg_parkingNearestBB = Float64MultiArray(data=None)
+            if self.conf['debugPrints_detectObject']:
+                rospy.loginfo(f"[nearest free Slot] {msg_parkingNearestBB}")
+            self.pup_parkingBB.publish(msg_parkingNearestBB)
             
             if False: #self.conf['debugPrints_detectObject']:
                 print('==========')
