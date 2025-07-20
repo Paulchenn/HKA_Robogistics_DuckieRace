@@ -31,10 +31,10 @@ xForSlowDrive: 200
 
 iou_thresh: 0.01
 
-show_image: false
-show_lineDetect_image: true
+show_yoloImage: true
+show_lineDetectImage: true
 
 debugPrints_detectObject: false
-debugPrints_parking: true
+debugPrints_parking: false
 
-go_parking: true
+go_parking: false
