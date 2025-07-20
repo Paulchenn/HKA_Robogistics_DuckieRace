@@ -31,10 +31,14 @@ xForSlowDrive: 200
 
 iou_thresh: 0.01
 
+confidence_yolo: 0.7
+confidence_temporal: 0.6
+bridge_limit: 10
+
 show_yoloImage: true
 show_lineDetectImage: true
 
 debugPrints_detectObject: false
-debugPrints_parking: true
+debugPrints_parking: false
 
-go_parking: true
+go_parking: false
