@@ -23,6 +23,8 @@ class ParkingNode(DTROS):
         self.camImage = None
         self.cv_image = None
         self.curr_bbox = None
+        self.linedImage = None
+        self.parkstatusImage = None
 
         # State machine
         self.state = "IDLE"
@@ -58,9 +60,12 @@ class ParkingNode(DTROS):
         # === Publisher ===
         # for state (to switch_control_node)
         self.pub_state = rospy.Publisher(f"/{self._vehicle_name}/detect/object/slow4park", Int32, queue_size=1)# Start in IDLE
-        self.publish_state(0)
         # for driving command
         self.pub_lane_twist = rospy.Publisher(f"/{self._vehicle_name}/car_cmd_switch_node/cmd", Twist2DStamped, queue_size=1)
+
+        # publish state 0 (idle)
+        self.publish_state(0)
+
 
 
     ##### ===== CALLBACK FUNCTIONS OF SUBSRIBERS ===== #####
@@ -99,11 +104,8 @@ class ParkingNode(DTROS):
 
         cv2.putText(self.cv_image, myText, (10, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
-        # Optional: show image (for debugging only, not on robot)
-        if self.conf['show_image'] and self.cv_image is not None:
-            cv2.imshow("Parking Status", self.cv_image)
-            cv2.waitKey(1)
+        
+        self.parkstatusImage = self.cv_image
 
         # Optionally: republish image with overlay if needed
         # img_out_msg = self._bridge_yoloImage.cv2_to_imgmsg(self.cv_image, encoding="bgr8")
@@ -121,16 +123,14 @@ class ParkingNode(DTROS):
         Returns:
             none
         '''
-        if not msg.data or len(msg.data) != 4 or not self.conf["go_parking"]:
+        if not msg.data or len(msg.data) != 4:
             if self.conf["debugPrints_parking"]:
-                rospy.loginfo(f"[PARKING] Wrong data or no parking activated")
+                rospy.loginfo(f"[PARKING] Wrong data")
             self.curr_bbox = None
             return
         else:
             self.curr_bbox = msg
             self.time_lastBB = time.time()
-            if self.conf["debugPrints_parking"]:
-                rospy.loginfo(f"[PARKING] Correct data and parking activated")
 
 
     def cbCamImage(self, msg):
@@ -174,6 +174,7 @@ class ParkingNode(DTROS):
 
     def detect_yellow(self, image):
         min_area = 1
+        m_yellow = b_yellow = None
 
         # convert Image to HSV
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -256,68 +257,101 @@ class ParkingNode(DTROS):
             ys = np.array([pt[1] for pt in centroids_yellow])
 
             # fit y = m * x + b
-            self.m_yellow, self.b_yellow = np.polyfit(xs, ys, 1)
+            m_yellow, b_yellow = np.polyfit(xs, ys, 1)
 
             # create two points on straight (in image)
             x1, x2 = 0, image.shape[1]
-            y1 = int(self.m_yellow * x1 + self.b_yellow)
-            y2 = int(self.m_yellow * x2 + self.b_yellow)
+            y1 = int(m_yellow * x1 + b_yellow)
+            y2 = int(m_yellow * x2 + b_yellow)
 
             # draw straghit into picture
             cv2.line(image, (x1, y1), (x2, y2), (100, 255, 255), 2)
 
-            if self.conf["debugPrints_parking"]:
-                rospy.loginfo(f"[PARKING] m_yellow: {self.m_yellow}; b_yellow: {self.b_yellow}")
-
         # Create Target line for yellow
         self.m_target = 0
-        self.b_target = 290
+        self.b_target = 270
         x1, x2 = 0, image.shape[1]
         y1 = int(self.m_target * x1 + self.b_target)
         y2 = int(self.m_target * x2 + self.b_target)
         cv2.line(image, (x1, y1), (x2, y2), (180, 105, 255), 2)
 
+        self.linedImage = image
 
-        if self.conf['show_lineDetect_image']:
-            #cv2.imshow("edges-white", edges_white)
-            #cv2.imshow("edges-yellow", edges_yellow)
-            cv2.imshow("Parking", image)
-            cv2.waitKey(1)
+        return m_yellow, b_yellow
 
 
-    def calculate_control(self):
-        if self.m_yellow is None or self.b_yellow is None:
-            return None, None  # Linien nicht gefunden
+    def calculate_control(self, m_yellow, b_yellow):
+        '''
+        Calculate speed (v) and angular velocity (omega) to control the parking maneuver.
 
-        # Bildmitte entlang x
-        x_middle = self.camImage.shape[1] // 2
-
-        # y-Werte an der Bildmitte für gelbe Linie und Ziel-Linie
-        y_yellow = self.m_yellow * x_middle + self.b_yellow
-        y_target = self.m_target * x_middle + self.b_target
-
-        # laterale Differenz (Bildpixel, kann als Proxy für Abstand genutzt werden)
-        lateral_error = y_target - y_yellow
-
-        # Winkelabweichung (in Grad oder direkt Steigung)
-        angle_error = math.atan(self.m_yellow - self.m_target)  # rad
-
-        # einfache P-Regler
-        Kp_steering = 0.005
-        Kp_angle = 1.0
-
-        # Steuerung
-        omega = Kp_steering * lateral_error + Kp_angle * angle_error
-        v = -0.15  # konstante Rückwärtsfahrt
-
-        if self.conf["debugPrints_parking"]:
-            rospy.loginfo(f"[PARKING] lateral_error: {lateral_error:.2f}, angle_error: {math.degrees(angle_error):.2f}, omega: {omega:.2f}")
+        Args:
+            self
+            m_yellow: gradient of yellow line
+            b_yellow: y-intercept of yellow line
         
-        if abs(lateral_error) < 5 and abs(angle_error) < math.radians(2):
-            v = omega = 0
-            self.stateDoParking = False
+        Returns:
+            v: speed (negative for reverse)
+            omega: angular velocity
+        '''
+        if m_yellow is None or b_yellow is None:
+            if self.conf["debugPrints_parking"]:
+                rospy.loginfo(f"[PARKING] m_yellow={m_yellow}; b_yellow={b_yellow}")
+            return None, None  # Yellow line not detected
+
+        # Get image width and define two x-positions: left and right
+        width = self.camImage.shape[1]
+        x_left = int(width * 0.25)
+        x_right = int(width * 0.75)
+
+        # Calculate corresponding y-values for the yellow and target line at those x positions
+        y_yellow_left = m_yellow * x_left + b_yellow
+        y_target_left = self.m_target * x_left + self.b_target
+
+        y_yellow_right = m_yellow * x_right + b_yellow
+        y_target_right = self.m_target * x_right + self.b_target
+
+        # Compute lateral errors at left and right
+        lateral_error_left = y_target_left - y_yellow_left
+        lateral_error_right = y_target_right - y_yellow_right
+
+        # Average lateral error as main input for steering correction
+        if lateral_error_left < 0 and lateral_error_right < 0:
+            lateral_error = (lateral_error_left + lateral_error_right) / 2
         else:
-            self.stateDoParking = True
+            lateral_error = 0
+
+        # Estimate angular deviation from difference between left and right error
+        # (larger difference implies line is rotated relative to target line)
+        angle_error = lateral_error_right - lateral_error_left
+
+        # Control gains
+        Kp_lateral = 0.007  # Proportional gain for lateral position
+        Kp_angle = 0.07     # Proportional gain for angle correction
+        Kp_speed = 0.015     # Gain for speed scaling
+
+        # Compute omega from lateral + angle error
+        omega = Kp_lateral * lateral_error + Kp_angle * angle_error
+
+        # Dynamically adjust speed (v) based on total error
+        total_error = abs(lateral_error) #+ abs(angle_error)
+        max_v = 0.25
+        v = -min(max_v, Kp_speed * total_error)
+
+        # # Calculate angular velocity (omega) and set constant backward velocity (v)
+        # omega = Kp_lateral * lateral_error + Kp_angle * angle_error
+        # v = -0.25  # Constant backward speed
+
+        # Debug output
+        if self.conf["debugPrints_parking"]:
+            rospy.loginfo(f"[PARKING] lat_err L/R: {lateral_error_left:.2f}/{lateral_error_right:.2f}, "
+                        f"angle_err: {angle_error:.2f}, omega: {omega:.2f}, v: {v:.2f}")
+
+        # Stop condition if errors are small enough
+        if abs(lateral_error) < 5 and abs(angle_error) < 5:
+            v = omega = 0
+            self.state = "WAIT"
+            self.status_text = "Status: WAIT --> parked"
+            self.time_inPark = time.time()
 
         return v, omega
 
@@ -336,18 +370,22 @@ class ParkingNode(DTROS):
         '''
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
-            if self.cv_image is None or self.camImage is None: #or self.curr_bbox is None
+            if self.cv_image is None or self.camImage is None or self.curr_bbox is None or not self.conf["go_parking"]:
+                if self.conf["debugPrints_parking"] and not self.conf["go_parking"]:
+                    rospy.loginfo(f"[PARKING] deactivated")
                 rate.sleep()
                 continue
             
             timeDelta_toLastBB = time.time() - self.time_lastBB
-            if True: #timeDelta_toLastBB > 2:
+            if timeDelta_toLastBB > 2:
                 x1 = x2 = y1 = y2 = 0
             else:
                 x1, y1, x2, y2 = self.curr_bbox.data
 
             if self.time_startPark is not None:
                 self.delay_startPark = time.time()-self.time_startPark
+            if self.time_inPark is not None:
+                self.delay_inPark = time.time()-self.time_inPark
 
             with self.transition_lock:
                 if self.state == "IDLE":
@@ -359,37 +397,52 @@ class ParkingNode(DTROS):
                         self.status_text = "Status: SLOW --> approaching slot"
                         self.time_startPark = time.time()
                         self.publish_state(1)
-                    elif True:
+                    elif False:
                         self.state = "SLOW"
                         self.status_text = "Status: SLOW --> approaching slot"
                         self.time_startPark = time.time()
                         self.publish_state(1)
 
-                elif self.state == "SLOW" and self.delay_startPark>3:
+                elif self.state == "SLOW" and self.delay_startPark>2:
                     # Almost passed the slot --> start parking
                     self.state = "PARKING"
                     self.status_text == "Status: PARKING --> is parking (reverse)"
                     self.time_doPark = time.time()
-                    self.stateDoParking = True
                     self.publish_state(5)
 
-                elif self.state == "PARKING" and self.stateDoParking == True:
+                elif self.state == "PARKING":
                     if self.camImage is not None:
-                        self.detect_yellow(self.camImage)
-                        v, omega = self.calculate_control()
-                        if v is not None and omega is not None:
-                            reverse_turn = Twist2DStamped(v=v, omega=omega)
-                            self.pub_lane_twist.publish(reverse_turn)
+                        m_yellow, b_yellow = self.detect_yellow(self.camImage)
+                        if self.conf["debugPrints_parking"]:
+                            rospy.loginfo(f"[PARKING] m_yellow: {m_yellow}; b_yellow: {b_yellow}")
+                        v, omega = self.calculate_control(m_yellow, b_yellow)
+                        #v=omega=0
+                        if v is None and omega is None:
+                            v = omega = 0
+                        reverse_turn = Twist2DStamped(v=v, omega=omega)
+                        self.pub_lane_twist.publish(reverse_turn)
 
-                elif self.state == "PARKING" and self.stateDoParking == False:
-                    self.time_inPark = time.time()
-                    # calculate Control based on yellow dottet line
-                    self.status_text = "Status: WAIT --> parked"
+                elif self.state == "WAIT" and self.delay_inPark>5:
+                    self.state = "EXIT"
+                    self.status_text = "Status: EXIT"
+                    exit_turn = Twist2DStamped(v=0.2, omega=-3.5)
+                    self.pub_lane_twist.publish(exit_turn)
+                    rospy.sleep(2.0)
+                    stopBot = Twist2DStamped(v=0, omega=0)
+                    self.pub_lane_twist.publish(stopBot)
+                    self.state = "IDLE"
+                    self.status_text = "Status: IDLE"
+                    self.publish_state(0)
 
-                elif self.state in ["WAIT", "EXIT"]:
-                    pass  # handled by timers
+            if self.conf['show_lineDetectImage']:
+                #cv2.imshow("edges-white", edges_white)
+                #cv2.imshow("edges-yellow", edges_yellow)
+                if self.linedImage is not None:
+                    cv2.imshow("Parking", self.linedImage)
+                if self.parkstatusImage is not None:
+                    cv2.imshow("Parking Status", self.parkstatusImage)
 
-                # self.status_text = "Status: IDLE"
+                cv2.waitKey(1)
         
 
 
