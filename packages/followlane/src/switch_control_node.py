@@ -35,6 +35,8 @@ class SwitchControlNode(DTROS):
         self.intersection_info = 0
         self.parking_info = 0
 
+        self.tof_info = 0
+
         # Publisher
         self.pub_selected_x = rospy.Publisher(
             f"/{self._vehicle_name}/control/selected_x", Float64, queue_size=1
@@ -43,6 +45,10 @@ class SwitchControlNode(DTROS):
             f"/{self._vehicle_name}/switch/control", Int32, queue_size=1
         )
 
+        # Subscriber: ToF Info (z. B. 3 = STOP, 0 = normal)
+        rospy.Subscriber(
+            f"/{self._vehicle_name}/tof/avoidance/info", Int32, self.cbToFInfo, queue_size=1
+)
         # Subscriber: Lane-Following X
         rospy.Subscriber(
             f"/{self._vehicle_name}/detect/lane", Float64, self.cbLaneX, queue_size=1
@@ -76,6 +82,12 @@ class SwitchControlNode(DTROS):
         rospy.on_shutdown(self.fnShutDown)
 
         self.checkYoloRunning = False
+
+    def cbToFInfo(self, msg: Int32):
+        self.tof_info = msg.data
+        if self.debug:
+            rospy.loginfo(f"[SWITCH] ToF Info: {self.tof_info}")
+
 
     def cbLaneX(self, msg: Float64):
         self.lane_x = msg.data
@@ -122,7 +134,7 @@ class SwitchControlNode(DTROS):
             selected_x = None
 
             # === Prioritätsbasierte Steuerung ===
-            if self.intersection_info == 3:
+            if self.intersection_info == 3 or self.tof_info == 3:
                 self._state = ControlState.STOP
                 selected_x = None
                 if self.debug_run:
