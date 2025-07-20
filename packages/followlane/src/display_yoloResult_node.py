@@ -43,7 +43,7 @@ class DisplayYoloResultNode(DTROS):
         Callback function to process the incoming image message.
         :param image_msg: The incoming image message.
         """
-        if self.conf['show_image'] == False:
+        if self.conf['show_yoloImage'] == False:
             return
         else:
             #self.latest_img = self._bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
