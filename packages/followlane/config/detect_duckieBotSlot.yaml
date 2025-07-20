@@ -35,6 +35,6 @@ show_yoloImage: true
 show_lineDetectImage: true
 
 debugPrints_detectObject: false
-debugPrints_parking: false
+debugPrints_parking: true
 
-go_parking: false
+go_parking: true
