@@ -37,6 +37,14 @@ class SwitchControlNode(DTROS):
 
         self.tof_info = 0
 
+        #Zeitstempel für Publisher
+        self.duckie_info_time = None
+        self.intersection_info_time = None
+        self.parking_info_time = None
+        self.tof_info_time = None
+
+
+
         # Publisher
         self.pub_selected_x = rospy.Publisher(
             f"/{self._vehicle_name}/control/selected_x", Float64, queue_size=1
@@ -85,6 +93,7 @@ class SwitchControlNode(DTROS):
 
     def cbToFInfo(self, msg: Int32):
         self.tof_info = msg.data
+        self.tof_info_time = rospy.Time.now()
         if self.debug:
             rospy.loginfo(f"[SWITCH] ToF Info: {self.tof_info}")
 
@@ -101,11 +110,13 @@ class SwitchControlNode(DTROS):
 
     def cbDuckieInfo(self, msg: Int32):
         self.duckie_info = msg.data
+        self.duckie_info_time = rospy.Time.now()
         if self.debug:
             rospy.loginfo(f"[SWITCH] Duckie Info: {self.duckie_info}")
 
     def cbIntersectionInfo(self, msg: Int32):
         self.intersection_info = msg.data
+        self.intersection_info_time = rospy.Time.now()
         if self.debug:
             rospy.loginfo(f"[SWITCH] Intersection Info: {self.intersection_info}")
 
@@ -116,22 +127,55 @@ class SwitchControlNode(DTROS):
 
     def cbParkingInfo(self, msg: Int32):
         self.parking_info = msg.data
+        self.parking_info_time = rospy.Time.now()
         if self.debug:
             rospy.loginfo(f"[SWITCH] Parking Info: {self.parking_info}")
 
     def fnShutDown(self):
         rospy.loginfo("[SWITCH] Node wird heruntergefahren.")
 
+    def is_recent(self, msg_time, max_age_sec=0.3):
+        if msg_time is None:
+            return False
+        return (rospy.Time.now() - msg_time).to_sec() < max_age_sec
+
+
     def run(self):
         rate = rospy.Rate(20)
 
-        # if not self.checkYoloRunning:
-        #     topic_name_1 = f"/{self._vehicle_name}/detect/object/image"
-        #     rospy.wait_for_message(topic_name_1, Image, timeout=20.0)
-        #     self.checkYoloRunning = True
+        if not self.checkYoloRunning:
+            topic_name_1 = f"/{self._vehicle_name}/detect/object/image"
+            rospy.wait_for_message(topic_name_1, Image, timeout=20.0)
+            self.checkYoloRunning = True
 
         while not rospy.is_shutdown():
             selected_x = None
+
+            # Duckie Info prüfen
+            if not self.is_recent(self.duckie_info_time):
+                self.duckie_info = 0
+                if self.debug_run:
+                    rospy.logwarn_once("[SWITCH] Duckie Info veraltet → zurück auf 0")
+
+            # Intersection Info prüfen
+            if not self.is_recent(self.intersection_info_time):
+                self.intersection_info = 0
+                if self.debug_run:
+                    rospy.logwarn_once("[SWITCH] Intersection Info veraltet → zurück auf 0")
+
+            # Parking Info prüfen
+            if not self.is_recent(self.parking_info_time):
+                self.parking_info = 0
+                if self.debug_run:
+                    rospy.logwarn_once("[SWITCH] Parking Info veraltet → zurück auf 0")
+            
+            # ToF Info prüfen
+            if not self.is_recent(self.tof_info_time):
+                self.tof_info = 0
+                if self.debug_run:
+                    rospy.logwarn_once("[SWITCH] ToF Info veraltet → zurück auf 0")
+
+
 
             # === Prioritätsbasierte Steuerung ===
             if self.intersection_info == 3 or self.tof_info == 3:
@@ -160,7 +204,7 @@ class SwitchControlNode(DTROS):
                 if self.debug_run:
                     rospy.logwarn("[RUN] PARKING – uebergebe Kontrolle an parking-node")
 
-            elif self.duckie_info == 1 or self.parking_info == 1 or self.intersection_info == 1:
+            elif self.duckie_info == 1 or self.parking_info == 1 or self.intersection_info == 1 or self.tof_info == 1:
                 self._state = ControlState.LANE_SLOW
                 if self.lane_x is not None:
                     selected_x = self.lane_x

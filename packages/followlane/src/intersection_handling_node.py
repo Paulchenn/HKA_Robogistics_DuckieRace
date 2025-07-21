@@ -8,8 +8,10 @@ import json
 import rospy
 import random
 from duckietown.dtros import DTROS, NodeType
-from std_msgs.msg import String, Bool, Int32, Float64
+from std_msgs.msg import String, Bool, Int32, Float64, ColorRGBA
 from sensor_msgs.msg import CompressedImage
+from duckietown_msgs.msg import LEDPattern
+import time
 
 class RedLineDetector(DTROS):
     def __init__(self, node_name):
@@ -25,10 +27,20 @@ class RedLineDetector(DTROS):
         self.pub_red_line_info = rospy.Publisher(f"/{self._vehicle_name}/red_line_info", String, queue_size=1)
         self.pub_info = rospy.Publisher(f"/{self._vehicle_name}/abfrage_info", Int32, queue_size=1)
         self.pub_target_x = rospy.Publisher(f"/{self._vehicle_name}/target_x", Int32, queue_size=1)
+        self.led_pub = rospy.Publisher(f"/{self._vehicle_name}/led_emitter_node/led_pattern", LEDPattern, queue_size=1)
 
         self.sub_image = rospy.Subscriber(self._camera_topic, CompressedImage, self.cb_image, queue_size=1)
         self.sub_redline = rospy.Subscriber(self._redLine_topic, Bool, self.process_stop_line, queue_size=1)
         self.sub_left_x = rospy.Subscriber(f"/{self._vehicle_name}/detect/lane/left_x", Float64, self.cb_left_x)
+        
+
+        # Blinken initialisieren
+        self.blink_on = True
+        self.blink_duration = 10.0
+        self.blink_start_time = time.time()
+        self.blink_timer = rospy.Timer(rospy.Duration(0.5), self.blink_all_leds)
+        self.pattern_on = LEDPattern()
+        self.pattern_on.frequency = 2.0
 
         self.current_image = None
 
@@ -143,6 +155,15 @@ class RedLineDetector(DTROS):
             if self.abbiegephase_gestartet and not self.abgeschlossen:
                 self.pub_info.publish(Int32(4))
                 if self.chosen_direction == "links":
+                    #LED-Muster für Linksabbiegen
+                    self.pattern_on.color_mask = [True, False, False, True]
+                    self.pattern_on.frequency_mask = [True, False, False, True]
+                    self.pattern_on.rgb_vals = [
+                        ColorRGBA(1.0, 1.0, 0.0, 1.0),
+                        ColorRGBA(0, 0, 0, 1),
+                        ColorRGBA(0, 0, 0, 1),
+                        ColorRGBA(1.0, 1.0, 0.0, 1.0)
+                    ]
                     rospy.loginfo_throttle(1, "[Abbiegen] Linksabbiegen aktiv")
                     if filtered_contours_red:
                         leftmost = min(filtered_contours_red, key=lambda cnt: cv2.boundingRect(cnt)[0])
@@ -236,7 +257,6 @@ class RedLineDetector(DTROS):
                         if self.debug:
                             rospy.loginfo(f"[Info] Unterste rote Box bei y={y} → sende Int32(1)")
                 else:
-                    self.pub_info.publish(Int32(0))
                     if self.debug:
                         rospy.loginfo("[Info] Keine rote Box erkannt → sende Int32(0)")
 

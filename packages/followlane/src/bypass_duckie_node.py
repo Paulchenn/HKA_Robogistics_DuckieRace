@@ -53,7 +53,6 @@ class BypassDuckieNode(DTROS):
         # Publisher
         self.pub_target_override = rospy.Publisher(f"/{self._vehicle_name}/detect/duckie/bypass_target", Float64, queue_size=1)
         self.pub_duckie_info = rospy.Publisher(f"/{self._vehicle_name}/detect/duckie/info", Int32, queue_size=1)
-        self.pub_bypassCmd_vel = rospy.Publisher(f"/{self._vehicle_name}/detect/duckie/bypass_cmd", Twist2DStamped, queue_size=1)
 
     def cb_duckieNearestBB(self, msg):
         if msg.data:
@@ -121,7 +120,6 @@ class BypassDuckieNode(DTROS):
                         if self.debug:
                             rospy.loginfo("[BYPASS] Duckie nah – starte Ausweichmanöver (Modus 1)")
                 else:
-                    self.pub_duckie_info.publish(Int32(0))
                     if self.debug:
                         rospy.loginfo("[BYPASS] Duckie nicht sichtbar in Modus 0")
 
@@ -186,7 +184,6 @@ class BypassDuckieNode(DTROS):
                     self.mode2_start_time = None
                     self.current_offset = 0
                     self.last_y2 = None
-                    self.pub_duckie_info.publish(Int32(0))
                     if self.debug:
                         rospy.loginfo("[BYPASS] Rückkehr abgeschlossen – zurück in Modus 0")
 

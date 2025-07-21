@@ -71,7 +71,6 @@ class ParkingNode(DTROS):
         self.pub_lane_twist = rospy.Publisher(f"/{self._vehicle_name}/car_cmd_switch_node/cmd", Twist2DStamped, queue_size=1)
 
         # publish state 0 (idle)
-        self.publish_state(0)
 
 
 
@@ -486,7 +485,6 @@ class ParkingNode(DTROS):
                     self.pub_lane_twist.publish(stopBot)
                     self.state = "IDLE"
                     self.status_text = "Status: IDLE"
-                    self.publish_state(0)
 
             if self.conf['show_lineDetectImage']:
                 #cv2.imshow("edges-white", edges_white)

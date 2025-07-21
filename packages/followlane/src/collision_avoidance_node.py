@@ -9,19 +9,21 @@ class ToFCollisionAvoidanceNode:
         rospy.init_node('tof_collision_avoidance_node')
 
         # === Parameter ===
-        self.threshold = 0.2  # Meter
-        self.debug = rospy.get_param("~debug", True)  # Debug-Modus
-        self.vehicle_name = os.environ.get("VEHICLE_NAME", "default_bot")  # Bot-Name
+        self.threshold = 0.2          # Meter: STOP ab hier
+        self.slow_threshold = 0.4     # Meter: LANGSAM zwischen 0.2 und 0.4
 
-        # === Variablen ===
+        self.debug = rospy.get_param("~debug", True)
+        self.vehicle_name = os.environ.get("VEHICLE_NAME", "default_bot")
+
+        # === Variable ===
         self.distance = None
-        self.ok_count = 0
-        self.ok_required = 5
 
         # === Publisher ===
-        self.ToFInfo_pub = rospy.Publisher(f'/{self.vehicle_name}/tof/avoidance/info', Int32, queue_size=1)
+        self.ToFInfo_pub = rospy.Publisher(
+            f'/{self.vehicle_name}/tof/avoidance/info', Int32, queue_size=1
+        )
 
-        # === Dynamischer Subscriber ===
+        # === Subscriber ===
         tof_topic = f'/{self.vehicle_name}/front_center_tof_driver_node/range'
         rospy.Subscriber(tof_topic, Range, self.range_callback, queue_size=1)
 
@@ -38,19 +40,21 @@ class ToFCollisionAvoidanceNode:
         while not rospy.is_shutdown():
             if self.distance is not None:
                 if self.distance < self.threshold:
-                    self.ok_count = 0
                     if self.debug:
                         rospy.logwarn(f"[ToF] STOP – Abstand unter Threshold: {self.distance:.2f} m")
                     self.ToFInfo_pub.publish(Int32(3))
+
+                elif self.distance < self.slow_threshold:
+                    if self.debug:
+                        rospy.loginfo(f"[ToF] LANGSAM – Abstand kritisch: {self.distance:.2f} m")
+                    self.ToFInfo_pub.publish(Int32(1))
+
                 else:
-                    self.ok_count += 1
-                    if self.ok_count >= self.ok_required:
-                        if self.debug:
-                            rospy.loginfo_throttle(5, f"[ToF] OK – Abstand: {self.distance:.2f} m (ok_count = {self.ok_count})")
-                        self.ToFInfo_pub.publish(Int32(0))
+                    # Kein Publish → switch_control_node übernimmt Rückfall auf 0
+                    if self.debug:
+                        rospy.loginfo_throttle(5, f"[ToF] OK – Abstand: {self.distance:.2f} m")
+
             rate.sleep()
-
-
 
 if __name__ == '__main__':
     node = ToFCollisionAvoidanceNode()
