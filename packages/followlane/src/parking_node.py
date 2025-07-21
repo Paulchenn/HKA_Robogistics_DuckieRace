@@ -39,7 +39,8 @@ class ParkingNode(DTROS):
         self._bridge_camImage = CvBridge()
 
         # timers
-        self.time_lastBB = time.time()
+        self.time_lastFree = time.time()
+        self.time_lastOccupied = time.time()
         self.time_startPark = None
         self.time_inPark = None
 
@@ -50,6 +51,9 @@ class ParkingNode(DTROS):
         self.integral_angle_error = 0.0
         self.last_time = time.time()
 
+        # set slot initialy to occupied
+        self.slot = 'occupied'
+
         # Read config file
         with open('packages/followlane/config/detect_duckieBotSlot.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
@@ -58,7 +62,8 @@ class ParkingNode(DTROS):
 
         # === Subscribers ===
         # for BBox of nearest free slot
-        self.sub_slot = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/parkingBB", Float64MultiArray, self.cbSlot, queue_size=1)
+        self.sub_freeSlot = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/parkingBB", Float64MultiArray, self.cbFreeSlot, queue_size=1)
+        self.sub_occupiedSlot = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/parkingOccupiedBB", Float64MultiArray, self.cbOccupiedSlot, queue_size=1)
         # for annotated Image
         self.sub_YoloImage = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/image", Image, self.cbYoloImage, queue_size=1)
         # for camera images
@@ -118,7 +123,7 @@ class ParkingNode(DTROS):
         # self.pub_overlay.publish(img_out_msg)
 
 
-    def cbSlot(self, msg):
+    def cbFreeSlot(self, msg):
         '''
         Callback function for subscrier of bounding boxes for free parking Slots.
 
@@ -130,13 +135,40 @@ class ParkingNode(DTROS):
             none
         '''
         if not msg.data or len(msg.data) != 4:
-            if self.conf["debugPrints_parking"] and self.conf["go_parking"]:
-                rospy.loginfo(f"[PARKING] Wrong data")
+            # if self.conf["debugPrints_parking"] and self.conf["go_parking"]:
+            #     rospy.loginfo(f"[PARKING] Wrong data free")
             self.curr_bbox = None
             return
         else:
             self.curr_bbox = msg
-            self.time_lastBB = time.time()
+            self.slot = 'free'
+            self.time_lastFree = time.time()
+            if self.conf["debugPrints_parking"]:
+                rospy.loginfo(f"[PARKING] free Slot detected")
+            
+            
+    def cbOccupiedSlot(self, msg):
+        '''
+        Callback function for subscrier of bounding boxes for free parking Slots.
+
+        Args:
+            self
+            msg: contains x1, y1 for upper left corner and x2,y2 for lower right corner of last detected free parking Slot.
+
+        Returns:
+            none
+        '''
+        if not msg.data or len(msg.data) != 4:
+            # if self.conf["debugPrints_parking"] and self.conf["go_parking"]:
+            #     rospy.loginfo(f"[PARKING] Wrong data occupied")
+            self.curr_bbox = None
+            return
+        else:
+            self.curr_bbox = None
+            self.slot = 'occupied'
+            self.time_lastOccupied = time.time()
+            if self.conf["debugPrints_parking"]:
+                rospy.loginfo(f"[PARKING] occupied Slot detected")
 
 
     def cbCamImage(self, msg):
@@ -424,9 +456,14 @@ class ParkingNode(DTROS):
             elif self.curr_bbox is None and self.state == "IDLE":
                 rate.sleep()
                 continue
+            elif self.slot=='occupied' or time.time()-self.time_lastOccupied<5:
+                if self.conf["debugPrints_parking"]:
+                    rospy.loginfo(f"[PARKING] time since last occupied {time.time()-self.time_lastOccupied:.2f}s")
+                rate.sleep()
+                continue
             elif self.curr_bbox is not None:
-                timeDelta_toLastBB = time.time() - self.time_lastBB
-                if timeDelta_toLastBB > 2:
+                timeDelta_toLastFree = time.time() - self.time_lastFree
+                if timeDelta_toLastFree > 2:
                     x1 = x2 = y1 = y2 = 0
                 else:
                     x1, y1, x2, y2 = self.curr_bbox.data
