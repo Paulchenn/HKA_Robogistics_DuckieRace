@@ -4,11 +4,11 @@ import cv2
 import yaml
 import numpy as np
 import os
-import json
+import playsound
 import rospy
 import random
 from duckietown.dtros import DTROS, NodeType
-from std_msgs.msg import String, Bool, Int32, Float64, ColorRGBA
+from std_msgs.msg import Bool, Int32, Float64, ColorRGBA
 from sensor_msgs.msg import CompressedImage
 from duckietown_msgs.msg import LEDPattern
 import time
@@ -24,7 +24,6 @@ class RedLineDetector(DTROS):
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
 
-        self.pub_red_line_info = rospy.Publisher(f"/{self._vehicle_name}/red_line_info", String, queue_size=1)
         self.pub_info = rospy.Publisher(f"/{self._vehicle_name}/abfrage_info", Int32, queue_size=1)
         self.pub_target_x = rospy.Publisher(f"/{self._vehicle_name}/target_x", Int32, queue_size=1)
         self.led_pub = rospy.Publisher(f"/{self._vehicle_name}/led_emitter_node/led_pattern", LEDPattern, queue_size=1)
@@ -35,17 +34,13 @@ class RedLineDetector(DTROS):
         
 
         # Blinken initialisieren
-        self.blink_on = True
-        self.blink_duration = 10.0
-        self.blink_start_time = time.time()
-        self.blink_timer = rospy.Timer(rospy.Duration(0.5), self.blink_all_leds)
         self.pattern_on = LEDPattern()
         self.pattern_on.frequency = 2.0
+        self.blink_on = True
+        self.blink_timer = None  # wird dynamisch erstellt
 
         self.current_image = None
 
-        self.direction_already_published = False
-        self.stop_line_detected = False
         self.waiting_at_line = False
         self.wait_start_time = None
         self.abbiegephase_gestartet = False
@@ -88,12 +83,57 @@ class RedLineDetector(DTROS):
             if self.debug:
                 rospy.loginfo_throttle(5, "[STOP] Stoplinie ignoriert – Cooldown aktiv")
 
+    def blink_all_leds(self, event):
+        if not hasattr(self, 'pattern_on'):
+            return
+
+        pattern_for_publish = LEDPattern()
+
+        if self.blink_on:
+            pattern_for_publish = self.pattern_on
+        else:
+            # → ALLE 5 LEDs ausschalten, inkl. LED 4 (vorne rechts)
+            pattern_for_publish.color_mask = [False] * 5
+            pattern_for_publish.frequency = 0.0
+            pattern_for_publish.frequency_mask = [False] * 5
+            pattern_for_publish.rgb_vals = [ColorRGBA(0, 0, 0, 1.0)] * 5
+
+        self.led_pub.publish(pattern_for_publish)
+        self.blink_on = not self.blink_on
+
+
+    def turn_off_leds(self):
+        pattern_default = LEDPattern()
+
+        # LED 0, 1, 3, 4: nutzen; LED 2: ignorieren
+        pattern_default.color_mask = [True, True, False, True, True]
+        pattern_default.frequency_mask = [False, False, False, False, False]
+        pattern_default.frequency = 0.0
+
+        # Mapping nach deiner Beobachtung
+        pattern_default.rgb_vals = [
+            ColorRGBA(1.0, 1.0, 1.0, 1.0),  # [0] Front links → weiß
+            ColorRGBA(1.0, 0.0, 0.0, 1.0),  # [1] Hinten rechts → rot
+            ColorRGBA(0.0, 0.0, 0.0, 1.0),  # [2] Ignorieren (kein Effekt)
+            ColorRGBA(1.0, 0.0, 0.0, 1.0),  # [3] Hinten links → rot
+            ColorRGBA(1.0, 1.0, 1.0, 1.0)   # [4] Vorne rechts → weiß
+        ]
+
+        self.led_pub.publish(pattern_default)
+
+
+
     def run(self):
         rate = rospy.Rate(10)  # 10 Hz
         while not rospy.is_shutdown():
             if self.current_image is None:
                 rate.sleep()
                 continue
+
+            if self.blink_timer is not None and not self.abbiegephase_gestartet and not self.waiting_at_line:
+                self.blink_timer.shutdown()
+                self.blink_timer = None
+                self.turn_off_leds()
 
             frame = self.current_image.copy()
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -131,39 +171,58 @@ class RedLineDetector(DTROS):
                     else:
                         options.append("rechts")
 
-            if options and not self.direction_already_published:
+            if options and self.chosen_direction is None:
                 rospy.loginfo(f"[Abbiegen] Mögliche Richtungen erkannt: {options}")
                 self.chosen_direction = random.choice(options)
-                msg_out = String()
-                msg_out.data = json.dumps({"richtung": self.chosen_direction})
-                self.pub_red_line_info.publish(msg_out)
-                self.direction_already_published = True
                 rospy.loginfo(f"[Abbiegen] Richtung gewählt: {self.chosen_direction}")
+
+                # LED-Muster sofort setzen (wird beim nächsten Blinken verwendet)
+                if self.chosen_direction == "links":
+                    self.pattern_on.color_mask = [True, False, False, True, False]  # LED 0 und 3 an
+                    self.pattern_on.frequency_mask = [True, False, False, True, False]
+                    self.pattern_on.rgb_vals = [
+                        ColorRGBA(1.0, 1.0, 0.0, 1.0),  # LED 0 → gelb (vorne links)
+                        ColorRGBA(0, 0, 0, 1.0),        # LED 1 → aus
+                        ColorRGBA(0, 0, 0, 1.0),        # LED 2 → ignorieren
+                        ColorRGBA(1.0, 1.0, 0.0, 1.0),  # LED 3 → gelb (hinten links)
+                        ColorRGBA(0, 0, 0, 1.0)         # LED 4 → aus
+    ]
+
+
+                elif self.chosen_direction == "rechts":
+                    self.pattern_on.color_mask = [False, True, False, False, True]  # LED 1 und 4 an
+                    self.pattern_on.frequency_mask = [False, True, False, False, True]
+                    self.pattern_on.rgb_vals = [
+                        ColorRGBA(0, 0, 0, 1.0),        # LED 0 → aus
+                        ColorRGBA(1.0, 1.0, 0.0, 1.0),  # LED 1 → gelb (hinten rechts)
+                        ColorRGBA(0, 0, 0, 1.0),        # LED 2 → ignorieren
+                        ColorRGBA(0, 0, 0, 1.0),        # LED 3 → aus
+                        ColorRGBA(1.0, 1.0, 0.0, 1.0)   # LED 4 → gelb (vorne rechts)
+    ]
 
             current_time = rospy.get_time()
             if self.waiting_at_line:
                 if current_time - self.wait_start_time < 2.0:
                     self.pub_info.publish(Int32(3))
-                    #rate.sleep()
+
+                    # === NEU: Blinken starten wenn noch nicht läuft ===
+                    if self.blink_timer is None and self.chosen_direction in ["links", "rechts"]:
+                        self.blink_timer = rospy.Timer(rospy.Duration(0.5), self.blink_all_leds)
+                        rospy.loginfo("[Abbiegen] Blinken gestartet beim Warten an Linie")
+
                     continue
+
                 else:
                     self.waiting_at_line = False
                     self.abbiegephase_gestartet = True
                     self.abbiege_start_time = current_time
                     rospy.loginfo("[Abbiegen] Abbiegevorgang gestartet")
+                    playsound.playsound("/code/catkin_ws/src/HKA_Robogistics_DuckieRace/packages/followlane/assets/sounds/male-death-scream-horror-352706.mp3")
+
 
             if self.abbiegephase_gestartet and not self.abgeschlossen:
                 self.pub_info.publish(Int32(4))
                 if self.chosen_direction == "links":
-                    #LED-Muster für Linksabbiegen
-                    self.pattern_on.color_mask = [True, False, False, True]
-                    self.pattern_on.frequency_mask = [True, False, False, True]
-                    self.pattern_on.rgb_vals = [
-                        ColorRGBA(1.0, 1.0, 0.0, 1.0),
-                        ColorRGBA(0, 0, 0, 1),
-                        ColorRGBA(0, 0, 0, 1),
-                        ColorRGBA(1.0, 1.0, 0.0, 1.0)
-                    ]
                     rospy.loginfo_throttle(1, "[Abbiegen] Linksabbiegen aktiv")
                     if filtered_contours_red:
                         leftmost = min(filtered_contours_red, key=lambda cnt: cv2.boundingRect(cnt)[0])
@@ -239,13 +298,17 @@ class RedLineDetector(DTROS):
                     self.left_x_value is not None
                 ):
                     rospy.loginfo("[Abbiegen] Weiße Linie erkannt – Abbiegevorgang abgeschlossen")
+                    if self.blink_timer is not None:
+                        self.blink_timer.shutdown()
+                        self.blink_timer = None
+                    self.turn_off_leds()
+
                     self.abbiegephase_gestartet = False
                     self.abgeschlossen = True
-                    self.pub_info.publish(Int32(0))
                     self.left_x_value = None
                     self.abbiege_start_time = None
                     self.last_turn_completed_time = current_time
-                    self.direction_already_published = False
+                    self.chosen_direction = None
 
             # --- NEU: Nur tiefste rote Box überwachen ---
             if not self.abbiegephase_gestartet and not self.waiting_at_line:
