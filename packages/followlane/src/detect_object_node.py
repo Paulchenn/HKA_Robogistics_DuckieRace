@@ -190,12 +190,20 @@ class DetectParkingSlotNode(DTROS):
 
             # Bot
             if bot_lane and conf_bot > self.conf["confidence_temporal"]:
-                nearest_bot = sorted(bot_lane, key=lambda b: (b[1] + b[3]) // 2)[0]
-                x1, y1, x2, y2 = map(int, nearest_bot)
-                msg_bot = Float64MultiArray(data=[x1, y1, x2, y2])
+                sorted_bots = sorted(bot_lane, key=lambda b: (b[1] + b[3]) // 2)
+                bbox_list = []
+
+                for bot in sorted_bots:
+                    x1, y1, x2, y2 = map(int, bot)
+                    bbox_list.extend([x1, y1, x2, y2])  # Pack all coordinates in a flat list
+
+                msg_bot = Float64MultiArray(data=bbox_list)
+
                 self.last_bot = msg_bot
                 self.last_bot_time = now
-                self.last_bot_bbox = {'bbox': (x1, y1, x2, y2), 'label': 'bot'}
+                self.last_bot_bbox = [  # Liste von Dicts
+                    {'bbox': tuple(map(int, b)), 'label': 'bot'} for b in sorted_bots
+                ]
             elif self.last_bot and (now - self.last_bot_time).to_sec() < self.timeout_sec:
                 pass
             else:
@@ -247,17 +255,24 @@ class DetectParkingSlotNode(DTROS):
             ]:
                 if obj is None:
                     continue
-                box = obj['bbox']
-                label = obj['label']
-                color = {
-                    'duckie': (0, 255, 255),
-                    'duckie_right': (150, 150, 0),
-                    'bot': (255, 0, 0),
-                    'freeSlot': (0, 255, 0),
-                    'occupiedSlot': (0, 0, 255)
-                }.get(label, (0, 0, 0))
-                cv2.rectangle(annotated, box[:2], box[2:], color, 2)
-                cv2.putText(annotated, label, (box[0], box[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                
+                if isinstance(obj, list):
+                    objs = obj
+                else:
+                    objs = [obj]
+
+                for entry in objs:
+                    box = entry['bbox']
+                    label = entry['label']
+                    color = {
+                        'duckie': (0, 255, 255),
+                        'duckie_right': (150, 150, 0),
+                        'bot': (255, 0, 0),
+                        'freeSlot': (0, 255, 0),
+                        'occupiedSlot': (0, 0, 255)
+                    }.get(label, (0, 0, 0))
+                    cv2.rectangle(annotated, box[:2], box[2:], color, 2)
+                    cv2.putText(annotated, label, (box[0], box[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
             img_msg = self._bridge.cv2_to_imgmsg(annotated, encoding="bgr8")
             self.pup_image.publish(img_msg)
