@@ -29,16 +29,16 @@ min_distance_nearestBot: 330
 yForSlowDrive: 430
 xForSlowDrive: 200
 
-iou_thresh: 0.01
-
-confidence_yolo: 0.7
+conf_threshold_duckie: 0.4
+conf_threshold_bot: 0.5
+conf_threshold_slot: 0.3
 confidence_temporal: 0.6
-bridge_limit: 10
+iou_threshold: 0.01
 
 show_yoloImage: true
-show_lineDetectImage: false
+show_lineDetectImage: true
 
 debugPrints_detectObject: false
-debugPrints_parking: false
+debugPrints_parking: true
 
-go_parking: false
+go_parking: true
