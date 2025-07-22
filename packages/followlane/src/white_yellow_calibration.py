@@ -8,16 +8,22 @@ import numpy as np
 from duckietown.dtros import DTROS, NodeType
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
+from std_msgs.msg import Int32
+
+
 
 class WhiteYellowCalibrationNode(DTROS):
     def __init__(self, node_name):
         super(WhiteYellowCalibrationNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
+
+
 
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
         self._bridge = CvBridge()
         self._window = "calibration"
         self._config_path = 'packages/followlane/config/detect_lane.yaml'
+        self.played = False
 
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
@@ -26,11 +32,18 @@ class WhiteYellowCalibrationNode(DTROS):
         self.current_mode = 'white'
         self.image = None
 
+        self.sound_pub = rospy.Publisher("/play_sound_trigger", Int32, queue_size=1)
+        self.played = False
+
         rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback)
 
         cv2.namedWindow(self._window)
         self.init_trackbars()
 
+        rospy.loginfo(f"ROS_MASTER_URI: {os.environ.get('ROS_MASTER_URI')}")
+        rospy.loginfo(f"ROS_IP: {os.environ.get('ROS_IP')}")
+        rospy.loginfo(f"VEHICLE_NAME: {self._vehicle_name}")
+        
     def init_trackbars(self):
         def nothing(x): pass
 
@@ -69,6 +82,13 @@ class WhiteYellowCalibrationNode(DTROS):
             if self.image is None:
                 rate.sleep()
                 continue
+
+
+            if not self.played:
+                rospy.loginfo(f"📡 Publishing to /play_sound_trigger with value 1")
+                self.sound_pub.publish(Int32(data=1))
+                self.played = True
+
 
             vals = self.get_trackbar_values()
             hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)

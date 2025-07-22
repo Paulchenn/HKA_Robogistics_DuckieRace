@@ -126,13 +126,13 @@ class CameraReaderNode(DTROS):
         if leftmost_x is not None and rightmost_x is not None and leftmost_x > rightmost_x:
             self.pub_right_x.publish(Float64(rightmost_x))
             self.pub_left_x.publish(Float64(leftmost_x))
-            return ((leftmost_x + rightmost_x) / 2)
+            return ((leftmost_x + rightmost_x) / 2 - 30)
         elif rightmost_x is not None:
             self.pub_right_x.publish(Float64(rightmost_x))
-            return rightmost_x + 200
+            return rightmost_x + 170
         elif leftmost_x is not None:
             self.pub_left_x.publish(Float64(leftmost_x))
-            return leftmost_x - 200
+            return leftmost_x - 230
         else:
             return None
 
@@ -153,8 +153,8 @@ class CameraReaderNode(DTROS):
             # Zwei HSV-Bereiche für Rot (0–10 und 170–180)
             lower_red1 = np.array([rd['hl'], rd['sl'], rd['vl']])
             upper_red1 = np.array([rd['hh'], rd['sh'], rd['vh']])
-            lower_red2 = np.array([170, rd['sl'], rd['vl']])
-            upper_red2 = np.array([180, rd['sh'], rd['vh']])
+            lower_red2 = np.array([140, rd['sl'], rd['vl']])
+            upper_red2 = np.array([255, rd['sh'], rd['vh']])
 
             mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
             mask2 = cv2.inRange(hsv, lower_red2, upper_red2)

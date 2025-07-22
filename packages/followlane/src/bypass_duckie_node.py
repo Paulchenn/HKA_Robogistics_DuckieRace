@@ -19,7 +19,7 @@ class BypassDuckieNode(DTROS):
         super(BypassDuckieNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
         self._vehicle_name = os.environ['VEHICLE_NAME']
 
-        self.debug = False
+        self.debug = True
         with open('packages/followlane/config/detect_duckie.yaml', 'r') as f:
             self.conf = yaml.safe_load(f)
 
@@ -119,9 +119,6 @@ class BypassDuckieNode(DTROS):
                         self.mode1_start_time = rospy.Time.now()
                         if self.debug:
                             rospy.loginfo("[BYPASS] Duckie nah – starte Ausweichmanöver (Modus 1)")
-                else:
-                    if self.debug:
-                        rospy.loginfo("[BYPASS] Duckie nicht sichtbar in Modus 0")
 
             # --- MODUS 1 ---
             if self.bypass_mode == 1:

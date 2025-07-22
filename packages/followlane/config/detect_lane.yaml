@@ -40,13 +40,13 @@ gelb:
   vh: 255
 red:
   hl: 0
-  hh: 10
+  hh: 15
   sl: 90
   sh: 255
   vl: 100
   vh: 255
 
-v_min: 0.2
-v_max: 0.35
+v_min: 0.0
+v_max: 0.0
 
 

@@ -12,7 +12,7 @@ class ToFCollisionAvoidanceNode:
         self.threshold = 0.2          # Meter: STOP ab hier
         self.slow_threshold = 0.4     # Meter: LANGSAM zwischen 0.2 und 0.4
 
-        self.debug = rospy.get_param("~debug", True)
+        self.debug = rospy.get_param("~debug", False)
         self.vehicle_name = os.environ.get("VEHICLE_NAME", "default_bot")
 
         # === Variable ===

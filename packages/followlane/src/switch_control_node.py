@@ -143,10 +143,10 @@ class SwitchControlNode(DTROS):
     def run(self):
         rate = rospy.Rate(10)
 
-        # if not self.checkYoloRunning:
-        #     topic_name_1 = f"/{self._vehicle_name}/detect/object/image"
-        #     rospy.wait_for_message(topic_name_1, Image, timeout=20.0)
-        #     self.checkYoloRunning = True
+        if not self.checkYoloRunning:
+            topic_name_1 = f"/{self._vehicle_name}/detect/object/image"
+            rospy.wait_for_message(topic_name_1, Image, timeout=20.0)
+            self.checkYoloRunning = True
 
         while not rospy.is_shutdown():
             selected_x = None
