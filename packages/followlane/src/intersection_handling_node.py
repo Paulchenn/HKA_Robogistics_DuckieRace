@@ -4,7 +4,6 @@ import cv2
 import yaml
 import numpy as np
 import os
-import playsound
 import rospy
 import random
 from duckietown.dtros import DTROS, NodeType
@@ -217,8 +216,6 @@ class RedLineDetector(DTROS):
                     self.abbiegephase_gestartet = True
                     self.abbiege_start_time = current_time
                     rospy.loginfo("[Abbiegen] Abbiegevorgang gestartet")
-                    playsound.playsound("/code/catkin_ws/src/HKA_Robogistics_DuckieRace/packages/followlane/assets/sounds/male-death-scream-horror-352706.mp3")
-
 
             if self.abbiegephase_gestartet and not self.abgeschlossen:
                 self.pub_info.publish(Int32(4))
