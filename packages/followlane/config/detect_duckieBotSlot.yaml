@@ -36,9 +36,10 @@ confidence_temporal: 0.69
 iou_threshold: 0.01
 
 show_yoloImage: true
-show_lineDetectImage: false
+show_parkingImage: true
+show_lineDetectImage: true
 
 debugPrints_detectObject: false
-debugPrints_parking: false
+debugPrints_parking: true
 
-go_parking: false
+go_parking: true
