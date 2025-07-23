@@ -10,9 +10,9 @@ import math
 
 from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, NodeType
-from duckietown_msgs.msg import Twist2DStamped
+from duckietown_msgs.msg import Twist2DStamped, LEDPattern
 from sensor_msgs.msg import Image, CompressedImage
-from std_msgs.msg import Int32, Float64MultiArray
+from std_msgs.msg import Int32, Float64MultiArray, ColorRGBA
 
 
 class ParkingNode(DTROS):
@@ -43,6 +43,7 @@ class ParkingNode(DTROS):
         self.time_lastOccupied = time.time()
         self.time_startPark = None
         self.time_inPark = None
+        self.time_doExit = None
 
         # Initializing for PID-Control
         self.prev_lateral_error = 0.0
@@ -53,6 +54,21 @@ class ParkingNode(DTROS):
 
         # set slot initialy to occupied
         self.slot = 'occupied'
+
+        # initialize blinking
+        self.pattern_on = LEDPattern()
+        self.pattern_on.frequency = 2.0
+        self.blink_on = True
+        self.blink_timer = None  # wird dynamisch erstellt
+        self.pattern_on.color_mask = [False, True, False, False, True]
+        self.pattern_on.frequency_mask = [False, True, False, False, True]
+        self.pattern_on.rgb_vals = [
+            ColorRGBA(0, 0, 0, 1.0),
+            ColorRGBA(1.0, 1.0, 0.0, 1.0),
+            ColorRGBA(0, 0, 0, 1.0),
+            ColorRGBA(0, 0, 0, 1.0),
+            ColorRGBA(1.0, 1.0, 0.0, 1.0)
+        ]
 
         # Read config file
         with open('packages/followlane/config/detect_duckieBotSlot.yaml', 'r') as f:
@@ -65,7 +81,7 @@ class ParkingNode(DTROS):
         self.sub_freeSlot = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/parkingBB", Float64MultiArray, self.cbFreeSlot, queue_size=1)
         self.sub_occupiedSlot = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/parkingOccupiedBB", Float64MultiArray, self.cbOccupiedSlot, queue_size=1)
         # for annotated Image
-        self.sub_YoloImage = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/image", Image, self.cbYoloImage, queue_size=1)
+        #self.sub_YoloImage = rospy.Subscriber(f"/{self._vehicle_name}/detect/object/image", Image, self.cbYoloImage, queue_size=1)
         # for camera images
         self.sub_camImage = rospy.Subscriber(f"/{self._vehicle_name}/camera_node/image/compressed", CompressedImage, self.cbCamImage, queue_size=1)
 
@@ -74,8 +90,18 @@ class ParkingNode(DTROS):
         self.pub_state = rospy.Publisher(f"/{self._vehicle_name}/detect/object/slow4park", Int32, queue_size=1)# Start in IDLE
         # for driving command
         self.pub_lane_twist = rospy.Publisher(f"/{self._vehicle_name}/car_cmd_switch_node/cmd", Twist2DStamped, queue_size=1)
+        # for blinking
+        self.led_pub = rospy.Publisher(f"/{self._vehicle_name}/led_emitter_node/led_pattern", LEDPattern, queue_size=1)
+        # for parking image
+        self.pub_parkingImage = rospy.Publisher(f"/{self._vehicle_name}/detect/parking/image", Image, queue_size=1)
 
-        # publish state 0 (idle)
+        self.m_yellow_hist = []
+        self.b_yellow_hist = []
+        self.smooth_N = 10  # Anzahl der Frames für Mittelung
+
+        self.lateral_error_hist = []
+        self.angle_error_hist = []
+        self.smooth_error_N = 10  # z.B. 10 Frames mitteln
 
 
 
@@ -98,6 +124,7 @@ class ParkingNode(DTROS):
             return
 
         # Draw the status text on the image
+        myText = self.status_text
         if self.status_text == "Status: SLOW --> approaching slot":
             if self.time_startPark is not None:
                 self.delay_startPark = time.time()-self.time_startPark
@@ -110,13 +137,16 @@ class ParkingNode(DTROS):
             if self.time_inPark is not None:
                 self.delay_inPark = time.time()-self.time_inPark
                 myText = f"{self.status_text}, {self.delay_inPark:.2f}s"
-        else:
-            myText = self.status_text
+        elif self.status_text == "Status: EXIT":
+            if self.time_doExit is not None:
+                self.delay_doExit = time.time()-self.time_doExit
+                myText = f"{self.status_text}, {self.delay_doExit:.2f}s"
 
         cv2.putText(self.cv_image, myText, (10, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         
-        self.parkstatusImage = self.cv_image
+        img_msg = self._bridge_yoloImage.cv2_to_imgmsg(self.cv_image, encoding="bgr8")
+        self.pub_parkingImage.publish(img_msg)
 
         # Optionally: republish image with overlay if needed
         # img_out_msg = self._bridge_yoloImage.cv2_to_imgmsg(self.cv_image, encoding="bgr8")
@@ -187,20 +217,6 @@ class ParkingNode(DTROS):
 
 
     ##### ===== OTHER FUNCTIONS ===== #####
-    def publish_state(self, val):
-        '''
-        Publishing thecurrent state.
-         
-        Args:
-            self
-            val: state to publish.
-
-        Returns:
-            none
-        '''
-        self.pub_state.publish(Int32(val))
-
-
     def create_polygon(self):
         return np.array([[
             [self.conf_lane['parking_image']['top_left_x'], self.conf_lane['parking_image']['top_left_y']],
@@ -338,8 +354,8 @@ class ParkingNode(DTROS):
 
         # Get image width and define two x-positions: left and right
         width = self.camImage.shape[1]
-        x_left = int(width * 0)
-        x_right = int(width * 1)
+        x_left = int(width * 0.1)
+        x_right = int(width * 0.9)
 
         # Calculate corresponding y-values for the yellow and target line at those x positions
         y_yellow_left = m_yellow * x_left + b_yellow
@@ -365,6 +381,15 @@ class ParkingNode(DTROS):
         # Estimate angular deviation from difference between left and right error
         # (larger difference implies line is rotated relative to target line)
         angle_error = lateral_error_right - lateral_error_left
+
+        # Smooth errors over N frames
+        self.lateral_error_hist.append(lateral_error)
+        self.angle_error_hist.append(angle_error)
+        if len(self.lateral_error_hist) > self.smooth_error_N:
+            self.lateral_error_hist.pop(0)
+            self.angle_error_hist.pop(0)
+        lateral_error = np.median(self.lateral_error_hist)
+        angle_error = np.median(self.angle_error_hist)
 
         # Time step
         current_time = time.time()
@@ -402,6 +427,7 @@ class ParkingNode(DTROS):
                      Kd_ang * derivative_angle_error)
 
         omega = omega_lat + omega_ang
+        omega = max(min(omega, 5.0), -5.0)  # Begrenzung auf [-5, 5]
 
         if abs(omega) < 0.1:
             omega = 0.0
@@ -409,7 +435,7 @@ class ParkingNode(DTROS):
         # Dynamically adjust speed (v) based on total error
         total_error = abs(lateral_error) #+ abs(angle_error)
         min_v = 0.15
-        max_v = 0.2
+        max_v = 0.15
         v = -min(max_v, 0.02 * total_error)
 
         if abs(omega) > 0.1 and abs(v) < abs(min_v):
@@ -432,6 +458,45 @@ class ParkingNode(DTROS):
             self.time_inPark = time.time()
 
         return v, omega
+    
+
+    def blink_all_leds(self, event):
+        if not hasattr(self, 'pattern_on'):
+            return
+
+        pattern_for_publish = LEDPattern()
+
+        if self.blink_on:
+            pattern_for_publish = self.pattern_on
+        else:
+            # → ALLE 5 LEDs ausschalten, inkl. LED 4 (vorne rechts)
+            pattern_for_publish.color_mask = [False] * 5
+            pattern_for_publish.frequency = 0.0
+            pattern_for_publish.frequency_mask = [False] * 5
+            pattern_for_publish.rgb_vals = [ColorRGBA(0, 0, 0, 1.0)] * 5
+
+        self.led_pub.publish(pattern_for_publish)
+        self.blink_on = not self.blink_on
+
+
+    def turn_off_leds(self):
+        pattern_default = LEDPattern()
+
+        # LED 0, 1, 3, 4: nutzen; LED 2: ignorieren
+        pattern_default.color_mask = [True, True, False, True, True]
+        pattern_default.frequency_mask = [False, False, False, False, False]
+        pattern_default.frequency = 0.0
+
+        # Mapping nach deiner Beobachtung
+        pattern_default.rgb_vals = [
+            ColorRGBA(1.0, 1.0, 1.0, 1.0),  # [0] Front links → weiß
+            ColorRGBA(1.0, 0.0, 0.0, 1.0),  # [1] Hinten rechts → rot
+            ColorRGBA(0.0, 0.0, 0.0, 1.0),  # [2] Ignorieren (kein Effekt)
+            ColorRGBA(1.0, 0.0, 0.0, 1.0),  # [3] Hinten links → rot
+            ColorRGBA(1.0, 1.0, 1.0, 1.0)   # [4] Vorne rechts → weiß
+        ]
+
+        self.led_pub.publish(pattern_default)
 
     
 
@@ -448,7 +513,7 @@ class ParkingNode(DTROS):
         '''
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
-            if self.cv_image is None or self.camImage is None or not self.conf["go_parking"]:
+            if self.camImage is None or not self.conf["go_parking"]:
                 if self.conf["debugPrints_parking"] and not self.conf["go_parking"]:
                     rospy.loginfo(f"[PARKING] deactivated")
                 rate.sleep()
@@ -472,17 +537,22 @@ class ParkingNode(DTROS):
                 self.delay_startPark = time.time()-self.time_startPark
             if self.time_inPark is not None:
                 self.delay_inPark = time.time()-self.time_inPark
+            if self.time_doExit is not None:
+                self.delay_doExit = time.time()-self.time_doExit
 
             with self.transition_lock:
                 if self.state == "IDLE":
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State IDLE")
                     # Slot is far right --> start slow driving
                     # if self.conf["debugPrints_parking"]:
                     #     rospy.loginfo(f"[PARKING] x1: {x1}; y2: {y2}")
                     if x1 > self.conf["xForSlowDrive"] and y2 > self.conf["yForSlowDrive"]:
+                        if self.blink_timer is None:
+                            self.blink_timer = rospy.Timer(rospy.Duration(0.5), self.blink_all_leds)
                         self.state = "SLOW"
                         self.status_text = "Status: SLOW --> approaching slot"
                         self.time_startPark = time.time()
-                        self.publish_state(1)
                     elif False:
                         self.state = "SLOW"
                         self.status_text = "Status: SLOW --> approaching slot"
@@ -490,18 +560,35 @@ class ParkingNode(DTROS):
                         self.publish_state(1)
 
                 elif self.state == "SLOW" and self.delay_startPark>2:
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State SLOW")
                     # Almost passed the slot --> start parking
                     self.state = "PARKING"
-                    self.status_text == "Status: PARKING --> is parking (reverse)"
+                    self.status_text = "Status: PARKING --> is parking (reverse)"
                     self.time_doPark = time.time()
-                    self.publish_state(5)
 
                 elif self.state == "PARKING":
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State PARKING")
                     if self.camImage is not None:
                         m_yellow, b_yellow = self.detect_yellow(self.camImage)
                         if self.conf["debugPrints_parking"]:
                             rospy.loginfo(f"[PARKING] m_yellow: {m_yellow}; b_yellow: {b_yellow}")
-                        v, omega = self.calculate_control(m_yellow, b_yellow)
+                        
+                        # Smooth the yellow line parameters over the last N frames
+                        if m_yellow is not None and b_yellow is not None:
+                            self.m_yellow_hist.append(m_yellow)
+                            self.b_yellow_hist.append(b_yellow)
+                            if len(self.m_yellow_hist) > self.smooth_N:
+                                self.m_yellow_hist.pop(0)
+                                self.b_yellow_hist.pop(0)
+                            m_yellow_smooth = np.median(self.m_yellow_hist)
+                            b_yellow_smooth = np.median(self.b_yellow_hist)
+                        else:
+                            m_yellow_smooth = m_yellow
+                            b_yellow_smooth = b_yellow
+
+                        v, omega = self.calculate_control(m_yellow_smooth, b_yellow_smooth)
                         #v=omega=0
                         if v is None and omega is None:
                             v = omega = 0
@@ -509,15 +596,38 @@ class ParkingNode(DTROS):
                         self.pub_lane_twist.publish(reverse_turn)
 
                 elif self.state == "WAIT" and self.delay_inPark<=5:
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State WAIT")
+                    if self.blink_timer is not None:
+                        self.blink_timer.shutdown()
+                        self.blink_timer = None
                     stopBot = Twist2DStamped(v=0, omega=0)
                     self.pub_lane_twist.publish(stopBot)
 
                 elif self.state == "WAIT":
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State WAIT")
+                    if self.blink_timer is None:
+                        self.blink_timer = rospy.Timer(rospy.Duration(0.5), self.blink_all_leds)
+                    self.time_doExit = time.time()
                     self.state = "EXIT"
                     self.status_text = "Status: EXIT"
+
+                elif self.state == "EXIT" and self.delay_doExit<=1:
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State EXIT")
                     exit_turn = Twist2DStamped(v=0.2, omega=-3.5)
                     self.pub_lane_twist.publish(exit_turn)
-                    rospy.sleep(1.0)
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] Exiting parking")
+
+                elif self.state == "EXIT":
+                    if self.conf["debugPrints_parking"]:
+                        rospy.loginfo(f"[PARKING] In State EXIT but stopping now")
+                    if self.blink_timer is not None:
+                        self.blink_timer.shutdown()
+                        self.blink_timer = None
+                    self.turn_off_leds()
                     stopBot = Twist2DStamped(v=0, omega=0)
                     self.pub_lane_twist.publish(stopBot)
                     self.state = "IDLE"
@@ -528,10 +638,20 @@ class ParkingNode(DTROS):
                 #cv2.imshow("edges-yellow", edges_yellow)
                 if self.linedImage is not None:
                     cv2.imshow("Parking", self.linedImage)
-                if self.parkstatusImage is not None:
-                    cv2.imshow("Parking Status", self.parkstatusImage)
 
                 cv2.waitKey(1)
+
+            if self.state == "PARKING" or self.state == "WAIT" or self.state == "EXIT":
+                if self.conf["debugPrints_parking"]:
+                    rospy.loginfo(f"[PARKING] publish val 5")
+                self.pub_state.publish(Int32(5))
+            elif self.state == "SLOW":
+                if self.conf["debugPrints_parking"]:
+                    rospy.loginfo(f"[PARKING] publish val 1")
+                self.pub_state.publish(Int32(1))
+            else:
+                if self.conf["debugPrints_parking"]:
+                    rospy.loginfo(f"[PARKING] publish nothing")
         
 
 
