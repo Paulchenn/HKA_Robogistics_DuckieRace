@@ -158,7 +158,7 @@ class DetectParkingSlotNode(DTROS):
 
             # Duckie Lane
             if duckie_lane and conf_duckie > self.conf["confidence_temporal"]:
-                nearest_duckie = sorted(duckie_lane, key=lambda b: (b[1] + b[3]) // 2)[0]
+                nearest_duckie = sorted(duckie_lane, key=lambda b: (b[1] + b[3]) // 2, reverse=True)[0]
                 x1, y1, x2, y2 = map(int, nearest_duckie)
                 msg_duckie_lane = Float64MultiArray(data=[x1, y1, x2, y2])
                 self.last_duckie_lane = msg_duckie_lane
@@ -174,7 +174,7 @@ class DetectParkingSlotNode(DTROS):
 
             # Duckie Right
             if duckie_right and conf_duckie_right > self.conf["confidence_temporal"]:
-                nearest_duckie_right = sorted(duckie_right, key=lambda b: (b[1] + b[3]) // 2)[0]
+                nearest_duckie_right = sorted(duckie_right, key=lambda b: (b[1] + b[3]) // 2, reverse=True)[0]
                 x1, y1, x2, y2 = map(int, nearest_duckie_right)
                 msg_duckie_lane_right = Float64MultiArray(data=[x1, y1, x2, y2])
                 self.last_duckie_lane_right = msg_duckie_lane_right
@@ -190,7 +190,7 @@ class DetectParkingSlotNode(DTROS):
 
             # Bot
             if bot_lane and conf_bot > self.conf["confidence_temporal"]:
-                sorted_bots = sorted(bot_lane, key=lambda b: (b[1] + b[3]) // 2)
+                sorted_bots = sorted(bot_lane, key=lambda b: (b[1] + b[3]) // 2, reverse=True)
                 bbox_list = []
 
                 for bot in sorted_bots:
@@ -214,7 +214,7 @@ class DetectParkingSlotNode(DTROS):
 
             # Free Slot
             if freeSlots and conf_freeSlot > self.conf["confidence_temporal"]:
-                nearest_free = sorted(freeSlots, key=lambda s: (s['bbox'][1] + s['bbox'][3]) // 2)[0]
+                nearest_free = sorted(freeSlots, key=lambda s: (s['bbox'][1] + s['bbox'][3]) // 2, reverse=True)[0]
                 x1, y1, x2, y2 = map(int, nearest_free['bbox'])
                 msg_freeSlot = Float64MultiArray(data=[x1, y1, x2, y2])
                 self.last_freeSlot = msg_freeSlot
@@ -230,7 +230,7 @@ class DetectParkingSlotNode(DTROS):
 
             # Occupied Slot
             if occupiedSlots and conf_occupiedSlot > self.conf["confidence_temporal"]:
-                nearest_occ = sorted(occupiedSlots, key=lambda s: (s['bbox'][1] + s['bbox'][3]) // 2)[0]
+                nearest_occ = sorted(occupiedSlots, key=lambda s: (s['bbox'][1] + s['bbox'][3]) // 2, reverse=True)[0]
                 x1, y1, x2, y2 = map(int, nearest_occ['bbox'])
                 msg_occupiedSlot = Float64MultiArray(data=[x1, y1, x2, y2])
                 self.last_occupiedSlot = msg_occupiedSlot
