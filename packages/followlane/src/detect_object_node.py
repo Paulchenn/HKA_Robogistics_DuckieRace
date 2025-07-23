@@ -27,7 +27,7 @@ class DetectParkingSlotNode(DTROS):
         self.history_freeSlot = deque(maxlen=10)
         self.history_occupiedSlot = deque(maxlen=10)
 
-        self.timeout_sec = 0.6
+        self.timeout_sec = 0.1
 
         self.last_duckie_lane = None
         self.last_duckie_lane_bbox = None
