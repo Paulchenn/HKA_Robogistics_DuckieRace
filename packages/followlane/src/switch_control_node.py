@@ -3,8 +3,9 @@
 import rospy
 import os
 from enum import Enum
-from std_msgs.msg import Float64, Int32
+from std_msgs.msg import Float64, Int32, ColorRGBA
 from duckietown.dtros import DTROS, NodeType
+from duckietown_msgs.msg import LEDPattern
 from sensor_msgs.msg import Image
 
 class ControlState(Enum):
@@ -52,6 +53,9 @@ class SwitchControlNode(DTROS):
         self.pub_control = rospy.Publisher(
             f"/{self._vehicle_name}/switch/control", Int32, queue_size=1
         )
+        self.led_pub = rospy.Publisher(
+            f"/{self._vehicle_name}/led_emitter_node/led_pattern", LEDPattern, queue_size=1
+        )
 
         # Subscriber: ToF Info (z. B. 3 = STOP, 0 = normal)
         rospy.Subscriber(
@@ -90,6 +94,22 @@ class SwitchControlNode(DTROS):
         rospy.on_shutdown(self.fnShutDown)
 
         self.checkYoloRunning = False
+
+        # set back blinkers
+        pattern_default = LEDPattern()
+        # LED 0, 1, 3, 4: nutzen; LED 2: ignorieren
+        pattern_default.color_mask = [True, True, False, True, True]
+        pattern_default.frequency_mask = [False, False, False, False, False]
+        pattern_default.frequency = 0.0
+        # Mapping nach deiner Beobachtung
+        pattern_default.rgb_vals = [
+            ColorRGBA(1.0, 1.0, 1.0, 1.0),  # [0] Front links → weiß
+            ColorRGBA(1.0, 0.0, 0.0, 1.0),  # [1] Hinten rechts → rot
+            ColorRGBA(0.0, 0.0, 0.0, 1.0),  # [2] Ignorieren (kein Effekt)
+            ColorRGBA(1.0, 0.0, 0.0, 1.0),  # [3] Hinten links → rot
+            ColorRGBA(1.0, 1.0, 1.0, 1.0)   # [4] Vorne rechts → weiß
+        ]
+        self.led_pub.publish(pattern_default)
 
     def cbToFInfo(self, msg: Int32):
         self.tof_info = msg.data
