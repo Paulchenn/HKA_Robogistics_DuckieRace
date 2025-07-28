@@ -22,45 +22,48 @@ class CameraReaderNode(DTROS):
         self._window = "camera-reader"
         self._config_path = 'packages/followlane/config/detect_lane.yaml'
 
+        # Load configuration from YAML file
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
 
         self.debug = self.conf.get('show_debug', False)
-        self.target_x_buffer = []
+        self.target_x_buffer = []  # buffer to smooth target x values
         self.image = None
 
-        # === Publisher ===
+        # === Publishers ===
         self.pub_lane = rospy.Publisher(f"/{self._vehicle_name}/detect/lane", Float64, queue_size=1)
         self.pub_left_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/left_x", Float64, queue_size=1)
         self.pub_right_x = rospy.Publisher(f"/{self._vehicle_name}/detect/lane/right_x", Float64, queue_size=1)
         self.pub_redline = rospy.Publisher(f"/{self._vehicle_name}/stop_line_detected", Bool, queue_size=1)
 
-        # === Subscriber ===
+        # === Subscribers ===
         rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback, queue_size=1)
         rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestBB", Float64MultiArray, self.cb_duckie_lane, queue_size=1)
         rospy.Subscriber(f"/{self._vehicle_name}/detect/object/duckieNearestRightBB", Float64MultiArray, self.cb_duckie_right, queue_size=1)
 
-
-
+        # Store duckie positions to avoid false lane detections
         self.duckie_lane_x = None
         self.duckie_rightlane_x = None
         self.duckie_tolerance = 15
 
+    # Callback for duckie bounding box in general lane
     def cb_duckie_lane(self, msg):
         if msg.data and len(msg.data) == 4:
             x1, _, x2, _ = msg.data
             self.duckie_lane_x = int((x1 + x2) / 2)
 
+    # Callback for duckie bounding box on right lane
     def cb_duckie_right(self, msg):
         if msg.data and len(msg.data) == 4:
             x1, _, x2, _ = msg.data
             self.duckie_rightlane_x = int((x1 + x2) / 2)
 
-
+    # Converts ROS image message to OpenCV format
     def image_callback(self, msg):
         self.image = self._bridge.compressed_imgmsg_to_cv2(msg)
         self._timestamp = msg.header.stamp
 
+    # Create ROI polygon from config
     def create_polygon(self):
         return np.array([[
             [self.conf['lane_image']['top_left_x'], self.conf['lane_image']['top_left_y']],
@@ -69,6 +72,7 @@ class CameraReaderNode(DTROS):
             [self.conf['lane_image']['bottom_left_x'], self.conf['lane_image']['bottom_left_y']],
         ]], dtype=np.int32)
 
+    # Calculate target x from detected contours inside the polygon mask
     def compute_target_x_from_polygon(self, polygon, mask_white, mask_yellow, image):
         min_area = 100
         mask_poly = np.zeros_like(mask_white)
@@ -97,7 +101,7 @@ class CameraReaderNode(DTROS):
             cx = int(M['m10'] / M['m00'])
             if leftmost_x is None or cx < leftmost_x:
                 leftmost_x = cx
-                cv2.drawContours(image, [cnt], -1, (0, 255, 0), 2)
+                cv2.drawContours(image, [cnt], -1, (0, 255, 0), 2)  # draw white lane contour
 
         rightmost_x = None
         for i, cnt in enumerate(contours_yellow):
@@ -109,7 +113,7 @@ class CameraReaderNode(DTROS):
                 continue
             cx = int(M['m10'] / M['m00'])
 
-            # Duckie-Toleranzprüfung
+            # Ignore contour if it's too close to a duckie
             ignore = False
             for duckie_x in [self.duckie_lane_x, self.duckie_rightlane_x]:
                 if duckie_x is not None and abs(cx - duckie_x) <= self.duckie_tolerance:
@@ -120,9 +124,9 @@ class CameraReaderNode(DTROS):
 
             if rightmost_x is None or cx > rightmost_x:
                 rightmost_x = cx
-                cv2.drawContours(image, [cnt], -1, (0, 255, 255), 2)
+                cv2.drawContours(image, [cnt], -1, (0, 255, 255), 2)  # draw yellow lane contour
 
-
+        # Decision logic based on contour positions
         if leftmost_x is not None and rightmost_x is not None and leftmost_x > rightmost_x:
             self.pub_right_x.publish(Float64(rightmost_x))
             self.pub_left_x.publish(Float64(leftmost_x))
@@ -150,12 +154,13 @@ class CameraReaderNode(DTROS):
             gh = self.conf['gelb']
             rd = self.conf['red']
 
-            # Zwei HSV-Bereiche für Rot (0–10 und 170–180)
+            # Define red mask ranges (split around HSV hue wrap-around)
             lower_red1 = np.array([rd['hl'], rd['sl'], rd['vl']])
             upper_red1 = np.array([rd['hh'], rd['sh'], rd['vh']])
             lower_red2 = np.array([140, rd['sl'], rd['vl']])
             upper_red2 = np.array([255, rd['sh'], rd['vh']])
 
+            # Apply red, white, and yellow masks
             mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
             mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
             mask_red = cv2.bitwise_or(mask1, mask2)
@@ -163,43 +168,32 @@ class CameraReaderNode(DTROS):
             mask_white = cv2.inRange(hsv, (wh['hl'], wh['sl'], wh['vl']), (wh['hh'], wh['sh'], wh['vh']))
             mask_yellow = cv2.inRange(hsv, (gh['hl'], gh['sl'], gh['vl']), (gh['hh'], gh['sh'], gh['vh']))
 
+            # Clean up noise in white and yellow masks
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
             mask_white = cv2.morphologyEx(mask_white, cv2.MORPH_OPEN, kernel)
             mask_white = cv2.morphologyEx(mask_white, cv2.MORPH_CLOSE, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_OPEN, kernel)
             mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
 
-            # Maske wie gehabt
-            mask_red = cv2.bitwise_or(mask1, mask2)
-
-            # Setze Y-Grenze (z. B. unterste 25 % oder fix)
+            # Define bottom ROI for red line detection
             y_cutoff = 400
             threshold_pixel_count = 200
-
-            # Erzeuge Maske für unteren Bildbereich
             mask_shape = mask_red.shape
             lower_part_mask = np.zeros_like(mask_red)
-            lower_part_mask[y_cutoff:, :] = 255  # Nur untere Zeilen = weiß (255), Rest = 0
-
-            # Wende Maske an → nur rote Pixel unterhalb von y_cutoff zählen
+            lower_part_mask[y_cutoff:, :] = 255
             mask_red_low = cv2.bitwise_and(mask_red, lower_part_mask)
             red_pixels_low = cv2.countNonZero(mask_red_low)
 
-            # Debug
-            if self.debug:
-                rospy.loginfo_throttle(1, f"Rote Pixel unterhalb y={y_cutoff}: {red_pixels_low}")
-
-            # Bedingung prüfen
+            # Publish stop signal if enough red pixels below cutoff
             if red_pixels_low > threshold_pixel_count:
                 self.pub_redline.publish(Bool(True))
-                self.pub_lane.publish(Float64(0))  # Optionaler Sofort-Stop
+                self.pub_lane.publish(Float64(0))  # Optional: stop vehicle
                 if self.debug:
-                    rospy.loginfo(f"[RedLine] STOP – {red_pixels_low} rote Pixel unterhalb y={y_cutoff}")
+                    rospy.loginfo(f"[RedLine] STOP – {red_pixels_low} red pixels below y={y_cutoff}")
             else:
                 self.pub_redline.publish(Bool(False))
 
-
-
+            # Lane detection
             polygon = self.create_polygon()
             target_x = self.compute_target_x_from_polygon(polygon, mask_white, mask_yellow, image)
 
@@ -216,24 +210,26 @@ class CameraReaderNode(DTROS):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
                 self.pub_lane.publish(Float64(smoothed_x))
 
-            # Center-Markierung
+            # Draw center mark for reference
             center_x = int(image.shape[1] / 2)
             center_y = image.shape[0] - 50
             cv2.circle(image, (center_x, center_y), 6, (0, 0, 255), -1)
             cv2.putText(image, "Center", (center_x - 25, center_y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
+            # Draw lane polygon
             cv2.polylines(image, polygon, isClosed=True, color=(255, 255, 255), thickness=2)
             cv2.imshow(self._window, image)
             cv2.waitKey(1)
 
             if self.debug:
-                rospy.loginfo(f"[Latenz] Jetzt: {rospy.Time.now().to_sec():.3f}, Bild-Zeitstempel: {self._timestamp.to_sec():.3f}")
-                rospy.loginfo(f"[Verzögerung] {(rospy.Time.now() - self._timestamp).to_sec():.3f} Sekunden")
-                rospy.loginfo(f"[Timer] Gesamtzeit: {(time.time() - start):.3f}s")
+                rospy.loginfo(f"[Latency] Now: {rospy.Time.now().to_sec():.3f}, Image timestamp: {self._timestamp.to_sec():.3f}")
+                rospy.loginfo(f"[Delay] {(rospy.Time.now() - self._timestamp).to_sec():.3f} seconds")
+                rospy.loginfo(f"[Timer] Total time: {(time.time() - start):.3f}s")
 
             rate.sleep()
 
+    # Save config on shutdown
     def fnShutDown(self):
         with open(self._config_path, 'w') as f:
             yaml.dump(self.conf, f)

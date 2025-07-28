@@ -40,6 +40,6 @@ show_parkingImage: true
 show_lineDetectImage: true
 
 debugPrints_detectObject: false
-debugPrints_parking: true
+debugPrints_parking: false
 
-go_parking: true
+go_parking: false

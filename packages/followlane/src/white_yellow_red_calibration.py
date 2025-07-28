@@ -16,8 +16,6 @@ class WhiteYellowCalibrationNode(DTROS):
     def __init__(self, node_name):
         super(WhiteYellowCalibrationNode, self).__init__(node_name=node_name, node_type=NodeType.VISUALIZATION)
 
-
-
         self._vehicle_name = os.environ['VEHICLE_NAME']
         self._camera_topic = f"/{self._vehicle_name}/camera_node/image/compressed"
         self._bridge = CvBridge()
@@ -25,18 +23,23 @@ class WhiteYellowCalibrationNode(DTROS):
         self._config_path = 'packages/followlane/config/detect_lane.yaml'
         self.played = False
 
+        # Load HSV config from YAML
         with open(self._config_path, 'r') as f:
             self.conf = yaml.safe_load(f)
 
+        # Map for color modes
         self.mode_map = {0: 'white', 1: 'gelb', 2: 'red'}
         self.current_mode = 'white'
         self.image = None
 
+        # Publisher for sound feedback
         self.sound_pub = rospy.Publisher("/play_sound_trigger", Int32, queue_size=1)
         self.played = False
 
+        # Subscribe to camera topic
         rospy.Subscriber(self._camera_topic, CompressedImage, self.image_callback)
 
+        # Create OpenCV window and trackbars
         cv2.namedWindow(self._window)
         self.init_trackbars()
 
@@ -45,25 +48,29 @@ class WhiteYellowCalibrationNode(DTROS):
         rospy.loginfo(f"VEHICLE_NAME: {self._vehicle_name}")
         
     def init_trackbars(self):
+        # Create HSV trackbars for calibration
         def nothing(x): pass
 
         for name in ['hl', 'hh', 'sl', 'sh', 'vl', 'vh']:
             val = self.conf[self.current_mode][name]
             cv2.createTrackbar(name, self._window, val, 255, nothing)
 
-        # 0 = white, 1 = gelb, 2 = red
+        # Trackbar to switch between color modes
         cv2.createTrackbar("mode", self._window, 0, 2, self.switch_mode)
 
     def switch_mode(self, val):
+        # Change current color mode and update trackbars
         self.current_mode = self.mode_map.get(val, 'white')
         self.update_trackbars()
 
     def update_trackbars(self):
+        # Set trackbars to current HSV values for selected mode
         for name in ['hl', 'hh', 'sl', 'sh', 'vl', 'vh']:
             val = self.conf[self.current_mode][name]
             cv2.setTrackbarPos(name, self._window, val)
 
     def get_trackbar_values(self):
+        # Read current HSV values from trackbars
         return {
             'hl': cv2.getTrackbarPos('hl', self._window),
             'hh': cv2.getTrackbarPos('hh', self._window),
@@ -74,6 +81,7 @@ class WhiteYellowCalibrationNode(DTROS):
         }
 
     def image_callback(self, msg):
+        # Convert compressed image to OpenCV format
         self.image = self._bridge.compressed_imgmsg_to_cv2(msg)
 
     def run(self):
@@ -83,19 +91,20 @@ class WhiteYellowCalibrationNode(DTROS):
                 rate.sleep()
                 continue
 
-
+            # Play sound once at startup
             if not self.played:
                 rospy.loginfo(f"📡 Publishing to /play_sound_trigger with value 1")
                 self.sound_pub.publish(Int32(data=1))
                 self.played = True
 
-
+            # Get HSV values from trackbars and apply mask
             vals = self.get_trackbar_values()
             hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
             lower = (vals['hl'], vals['sl'], vals['vl'])
             upper = (vals['hh'], vals['sh'], vals['vh'])
             mask = cv2.inRange(hsv, lower, upper)
 
+            # Visualize mask in color depending on mode
             output = self.image.copy()
             if self.current_mode == 'gelb':
                 output[mask > 0] = (0, 255, 255)
@@ -108,10 +117,11 @@ class WhiteYellowCalibrationNode(DTROS):
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('s'):
+                # Save current HSV values to YAML
                 self.conf[self.current_mode] = vals
                 with open(self._config_path, 'w') as f:
                     yaml.dump(self.conf, f)
-                print(f"[✓] HSV-Werte für '{self.current_mode}' gespeichert.")
+                print(f"[✓] HSV values for '{self.current_mode}' saved.")
 
             elif key == 27:  # ESC
                 break

@@ -29,14 +29,14 @@ white:
   hh: 255
   sl: 0
   sh: 60
-  vl: 169
+  vl: 137
   vh: 255
 gelb:
   hl: 15
   hh: 35
-  sl: 36
+  sl: 86
   sh: 255
-  vl: 90
+  vl: 86
   vh: 255
 red:
   hl: 0
